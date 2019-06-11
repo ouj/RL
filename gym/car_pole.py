@@ -1,4 +1,4 @@
-# https://github.com/openai/gym/wiki/CartPole-v0
+#!/usr/bin/env python3
 
 import gym
 import numpy as np

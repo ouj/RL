@@ -1,17 +1,4 @@
-# https://deeplearningcourses.com/c/deep-reinforcement-learning-in-python
-# https://www.udemy.com/deep-reinforcement-learning-in-python
-from __future__ import print_function, division
-from builtins import range
-# Note: you may need to update your version of future
-# sudo pip install -U future
-#
-# This takes 4min 30s to run in Python 2.7
-# But only 1min 30s to run in Python 3.5!
-#
-# Note: gym changed from version 0.7.3 to 0.8.0
-# MountainCar episode length is capped at 200 in later versions.
-# This means your agent can't learn as much in the earlier episodes
-# since they are no longer as long.
+#!/usr/bin/env python3
 
 import gym
 import os
@@ -21,7 +8,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 from gym import wrappers
 from datetime import datetime
-from mpl_toolkits.mplot3d import Axes3D
 from sklearn.pipeline import FeatureUnion
 from sklearn.preprocessing import StandardScaler
 from sklearn.kernel_approximation import RBFSampler
