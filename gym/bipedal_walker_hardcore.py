@@ -2,6 +2,7 @@
 
 import gym
 import tensorflow as tf
+import os
 import numpy as np
 from datetime import datetime
 
@@ -130,13 +131,20 @@ def evolute(
 
     return weights
 
+def save_weight(filename, weights):
+    np.savez(filename, weights)
 
+def load_weight(filename):
+    if not os.path.exists(filename):
+        return None
+    return np.load(filename)
 
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalkerHardcore-v2")
-    weights = evolute(env)
-    np.savez("params", *weights)
+    weights = load_weight("evolution.npz")
+    weights = evolute(env, weights=weights)
+    save_weight("evolution.npz", weights)
 
 
 if __name__ == "__main__":
