@@ -174,7 +174,7 @@ class DDPG:
 
             next_observation, reward, done, _ = self.env.step(action)
 
-            if np.sum(np.abs(next_observation - observation)) < 1e-2:
+            if np.sum(np.abs(next_observation - observation)) < 1e-5:
                 # if it stucks, we try to explore and get out of the jam
                 action_noise += self.action_noise
 
