@@ -15,7 +15,7 @@ def ANN(x, layer_sizes, hidden_activation=tf.nn.relu, output_activation=None):
     for h in layer_sizes[:-1]:
         x = tf.layers.Dense(
             units=h, activation=hidden_activation)(x)
-        x = tf.layers.Dropout(0.1)(x)
+#        x = tf.layers.Dropout(0.1)(x)
     return tf.layers.Dense(
         units=layer_sizes[-1], activation=output_activation)(x)
 
@@ -35,11 +35,11 @@ def create_networks(
     action_min,
     hidden_sizes=[300,],
     hidden_activation=tf.nn.relu,
-    output_activation=tf.sigmoid):
+    output_activation=tf.nn.tanh):
 
     with tf.variable_scope('mu'):
         mu = ANN(s, hidden_sizes+[num_actions], hidden_activation, output_activation)
-        mu = (action_max - action_min) * mu + action_min
+        mu = action_max[0] * mu
     with tf.variable_scope('q'):
         input_ = tf.concat([s, a], axis=-1) # (state, action)
         q = tf.squeeze(ANN(input_, hidden_sizes+[1], hidden_activation, None), axis=1)
@@ -52,8 +52,8 @@ def create_networks(
 
 class DDPG:
     def __init__(self, env, max_episode_length):
-        self.action_noise = 0.1
-        self.gamma = 0.999
+        self.action_noise = 0.15
+        self.gamma = 0.99
         self.decay = 0.995
         self.mu_learning_rate=1e-3
         self.q_learning_rate=1e-3
@@ -148,8 +148,6 @@ class DDPG:
         self.session.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver()
         self.session.run(self.target_init)
-        for v in tf.global_variables():
-            print(v.name, v.shape)
 
 
     def get_action(self, observation, noise_scale):
@@ -173,10 +171,6 @@ class DDPG:
                 action = self.get_action(observation, action_noise)
 
             next_observation, reward, done, _ = self.env.step(action)
-
-            if np.sum(np.abs(next_observation - observation)) < 1e-5:
-                # if it stucks, we try to explore and get out of the jam
-                action_noise += self.action_noise
 
             episode_return += reward
             episode_length += 1
@@ -234,7 +228,7 @@ class DDPG:
 
 
 
-    def update(self, episode_length, batch_size=64):
+    def update(self, episode_length, batch_size=32):
         q_losses = []
         mu_losses = []
         for _ in range(episode_length):
@@ -301,7 +295,7 @@ class DDPG:
 
 def play3(env):
     ddpg = DDPG(env, max_episode_length=1600)
-    ddpg.init(hidden_layers=[200, 200])
+    ddpg.init(hidden_layers=[400])
     ddpg.restore_checkpoint()
     for _ in range(10):
         episode_return, episode_length = ddpg.play_episode(
@@ -312,10 +306,10 @@ def play3(env):
 
 def train3(env):
     ddpg = DDPG(env, max_episode_length=1600)
-    ddpg.init(hidden_layers=[200, 200])
+    ddpg.init(hidden_layers=[400])
     ddpg.restore_checkpoint()
     episode_returns, q_losses, mu_losses = ddpg.train(
-        episode_number=15000,
+        episode_number=2000,
         random_episodes=50,
         save_checkpoint_every=50
     )
@@ -325,7 +319,7 @@ def train3(env):
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalker-v2")
-#    play3(env)
+#    play3(env)s
     train3(env)
     train3(env)
 

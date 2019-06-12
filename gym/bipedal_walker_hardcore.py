@@ -37,7 +37,7 @@ class EvoModel:
         outputs = tf.keras.layers.Dense(
             units=action_dim,
             kernel_initializer=initializer,
-            activation=tf.nn.sigmoid)(dense1)
+            activation=tf.nn.tanh)(dense1)
         self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
     def get_1d_weights(self):
@@ -57,7 +57,7 @@ class EvoModel:
         action = self.model.predict(np.atleast_2d(observation))[0]
         action_min = self.action_space.low
         action_max = self.action_space.high
-        action = (action_max - action_min) * action + action_min
+        action = action_max * action
         return np.clip(action, action_min, action_max)
 
     def mutate(self, sigma):
