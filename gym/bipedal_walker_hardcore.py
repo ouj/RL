@@ -10,17 +10,6 @@ def set_random_seed(seed):
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
-
-def update_weights(weights, update, factor):
-    new_weights = []
-    for w1, w2 in zip(weights, update):
-        new_weights.append(w1 + w2 * factor)
-    return new_weights
-
-def mutate_weights(weights, sigma):
-    mutation = np.random.randn(len(weights))
-    return weights + mutation * sigma
-
 class EvoModel:
     def __init__(self, state_dim, action_space):
         self.state_dim = state_dim
@@ -176,10 +165,6 @@ def main():
     agent.train()
 
 
+
 if __name__ == "__main__":
     main()
-
-
-
-
-
