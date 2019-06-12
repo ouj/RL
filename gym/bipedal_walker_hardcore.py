@@ -28,11 +28,16 @@ class EvoModel:
         observation_dim = self.observation_space.shape[0]
         action_dim = self.action_space.shape[0]
 
+        initializer = tf.keras.initializers.random_normal(mean=0.0, stddev=10)
         inputs = tf.keras.layers.Input(shape=(observation_dim,))
         dense1 = tf.keras.layers.Dense(
-            units=200, activation=tf.nn.relu)(inputs)
+            units=200,
+            kernel_initializer=initializer,
+            activation=tf.nn.relu)(inputs)
         outputs = tf.keras.layers.Dense(
-            units=action_dim, activation=tf.nn.sigmoid)(dense1)
+            units=action_dim,
+            kernel_initializer=initializer,
+            activation=tf.nn.sigmoid)(dense1)
         self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
     def get_1d_weights(self):
@@ -90,16 +95,11 @@ def evolute(
     env,
     iterations=100,
     population_size=10,
-    sigma=0.5,
+    sigma=0.1,
     learning_rate=0.03,
     weights=None
 ):
     model = EvoModel(env.observation_space, env.action_space)
-    sigma = 0.2
-    learning_rate = 0.03
-    iterations = 100
-    population_size = 10
-
     if weights is None:
         weights = model.get_1d_weights()
 
