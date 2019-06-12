@@ -22,22 +22,25 @@ def mutate_weights(weights, sigma):
     return weights + mutation * sigma
 
 class EvoModel:
-    def __init__(self, observation_space, action_space):
-        self.observation_space = observation_space
+    def __init__(self, state_dim, action_space):
+        self.state_dim = state_dim
         self.action_space = action_space
-        observation_dim = self.observation_space.shape[0]
         action_dim = self.action_space.shape[0]
 
         initializer = tf.keras.initializers.random_normal(mean=0.0, stddev=10)
-        inputs = tf.keras.layers.Input(shape=(observation_dim,))
+        inputs = tf.keras.layers.Input(shape=(state_dim,))
         dense1 = tf.keras.layers.Dense(
             units=200,
             kernel_initializer=initializer,
             activation=tf.nn.relu)(inputs)
+        dense2 = tf.keras.layers.Dense(
+            units=200,
+            kernel_initializer=initializer,
+            activation=tf.nn.relu)(dense1)
         outputs = tf.keras.layers.Dense(
             units=action_dim,
             kernel_initializer=initializer,
-            activation=tf.nn.tanh)(dense1)
+            activation=tf.nn.tanh)(dense2)
         self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
     def get_1d_weights(self):
@@ -53,8 +56,8 @@ class EvoModel:
             index += w.size
         self.model.set_weights(new_weights)
 
-    def predict(self, observation):
-        action = self.model.predict(np.atleast_2d(observation))[0]
+    def predict(self, state):
+        action = self.model.predict(np.atleast_2d(state))[0]
         action_min = self.action_space.low
         action_max = self.action_space.high
         action = action_max * action
@@ -69,87 +72,108 @@ class EvoModel:
         return new_model
 
 
-def play_episode(env, model, render=False):
-    observation = env.reset()
-    done = False
-    episode_return = 0
-    episode_length = 0
-    while not done:
-        action = model.predict(observation)
-        observation, reward, done, _ = env.step(action)
-        episode_return += reward
-        episode_length += 1
-        if render:
-            env.render()
-    return episode_return, episode_length
+class Agent:
 
-def save_weight(weights, filename="evolution.npy"):
-    np.savetxt(filename, weights)
+    INITIAL_EXPLORATION = 1.0
+    FINAL_EXPLORATION = 0.0
+    EXPLORATION_DEC_STEPS = 1000000
 
-def load_weight(filename="evolution.npy"):
-    if not os.path.exists(filename):
-        return None
-    return np.load(filename)
+    def __init__(
+        self,
+        env=gym.make('BipedalWalkerHardcore-v2'),
+        population_size=50,
+        sigma=0.1,
+        learning_rate=0.01,
+        decay = 0.999,
+        stack_size=8
+    ):
+        self.env = env
+        self.stack_size = stack_size
+        self.learning_rate = learning_rate
+        self.sigma = sigma
+        self.population_size = population_size
+        self.decay = decay
 
-def evolute(
-    env,
-    iterations=100,
-    population_size=10,
-    sigma=0.5,
-    learning_rate=0.03,
-    weights=None
-):
-    model = EvoModel(env.observation_space, env.action_space)
+        state_dim = self.env.observation_space.shape[0] * self.stack_size
+        self.model = EvoModel(state_dim, self.env.action_space)
+        self.weights = self.model.get_1d_weights()
+        self.exploration = self.INITIAL_EXPLORATION
 
-    if weights is None:
-        weights = model.get_1d_weights()
+    def play_episode(self, render=False):
+        observation = self.env.reset()
+        done = False
+        episode_return = 0
+        episode_length = 0
+        sequence = [observation] * self.stack_size
+        while not done:
+            action = self.get_action(np.concatenate(sequence))
+            observation, reward, done, _ = self.env.step(action)
+            episode_return += reward
+            episode_length += 1
+            if render:
+                self.env.render()
+            sequence = sequence[1:] + [observation]
+        return episode_return, episode_length
 
-    iteration_reward = np.zeros(iterations)
-    for t in range(iterations):
-        t0 = datetime.now()
-
-        returns = np.zeros(population_size) # episode return
-        mutations = np.random.randn(population_size, len(weights))
-
-        for p in range(population_size):
-            new_weights = weights + mutations[p] * sigma
-            model.set_1d_weights(new_weights)
-            episode_return, episode_length = play_episode(env, model, render=False)
-            returns[p] = episode_return
+    def get_action(self, state):
+        self.exploration = max(
+            self.FINAL_EXPLORATION,
+            self.exploration - self.INITIAL_EXPLORATION / self.EXPLORATION_DEC_STEPS)
+        if np.random.random() < self.exploration:
+            action = self.env.action_space.sample()
+        else:
+            action = self.model.predict(state)
+        return action
 
 
-        m = returns.mean()
-        s = returns.std()
-        if s == 0:
-            continue
+    def train(self, iterations=100):
+        iteration_reward = np.zeros(iterations)
+        for t in range(iterations):
+            t0 = datetime.now()
 
-        iteration_reward[t] = m
-        print ("Iteration reward:", m)
-        A = (returns - m) / s
+            returns = np.zeros(self.population_size) # episode return
+            mutations = np.random.randn(self.population_size, len(self.weights))
 
-        weights = weights + learning_rate / (population_size * sigma) * np.dot(mutations.T, A)
+            for p in range(self.population_size):
+                new_weights = self.weights + mutations[p] * self.sigma
+                self.model.set_1d_weights(new_weights)
+                episode_return, episode_length = self.play_episode(render=False)
+                returns[p] = episode_return
 
-        # update the learning rate
-        learning_rate *= 0.992354
-        sigma = max(0.1, sigma * 0.99)
-        print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
 
-        if t != 0 and t % 10 == 0:
-            model.set_1d_weights(weights)
-            episode_return, episode_length = play_episode(env, model, render=True)
-            save_weight(weights)
+            m = returns.mean()
+            s = returns.std()
+            if s == 0:
+                continue
 
-    return weights
+            iteration_reward[t] = m
+            print ("Iteration reward:", m)
+            A = (returns - m) / s
+
+            self.weights = self.weights + self.learning_rate / (self.population_size * self.sigma) * np.dot(mutations.T, A)
+
+            # update the learning rate
+            self.learning_rate *= self.decay
+            print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
+
+            if t != 0 and t % 10 == 0:
+                self.model.set_1d_weights(self.weights)
+                episode_return, episode_length = self.play_episode(render=True)
+
+        def save_weight(filename="evolution.npy"):
+            np.savetxt(filename, self.weights)
+
+        def load_weight(filename="evolution.npy"):
+            if not os.path.exists(filename):
+                return None
+            self.weights = np.load(filename)
+
 
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalkerHardcore-v2")
-    weights = evolute(
-        env,
-        iterations=1000,
-        population_size=100,
-    )
-    save_weight(weights)
+    agent = Agent(env)
+    agent.train()
 
 
 if __name__ == "__main__":
