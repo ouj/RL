@@ -83,10 +83,10 @@ def play_episode(env, model, render=False):
             env.render()
     return episode_return, episode_length
 
-def save_weight(weights, filename="evolution.npz"):
-    np.savez(filename, weights)
+def save_weight(weights, filename="evolution.npy"):
+    np.savetxt(filename, weights)
 
-def load_weight(filename="evolution.npz"):
+def load_weight(filename="evolution.npy"):
     if not os.path.exists(filename):
         return None
     return np.load(filename)
@@ -95,11 +95,12 @@ def evolute(
     env,
     iterations=100,
     population_size=10,
-    sigma=1.0,
+    sigma=0.5,
     learning_rate=0.03,
     weights=None
 ):
     model = EvoModel(env.observation_space, env.action_space)
+
     if weights is None:
         weights = model.get_1d_weights()
 
@@ -130,9 +131,7 @@ def evolute(
 
         # update the learning rate
         learning_rate *= 0.992354
-        sigma *= 0.999
-        sigma = max(0.1, sigma)
-
+        sigma = max(0.1, sigma * 0.99)
         print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
 
         if t != 0 and t % 10 == 0:
@@ -145,12 +144,10 @@ def evolute(
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalkerHardcore-v2")
-    weights = load_weight()
     weights = evolute(
         env,
         iterations=1000,
         population_size=100,
-        weights=weights
     )
     save_weight(weights)
 
