@@ -3,48 +3,22 @@
 import gym
 import tensorflow as tf
 import numpy as np
-from rl.replay_buffer import ReplayBuffer
+from datetime import datetime
 
 def set_random_seed(seed):
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
-# We will be solving this problem using evolution strategies
-#
-set_random_seed(0)
-#env = gym.make("BipedalWalkerHardcore-v2")
-#
-#observation = env.reset()
-#
-#tf.reset_default_graph()
-#
-#observation_dim = env.observation_space.shape[0]
-#action_dim = env.action_space.shape[0]
-#
-#tf.all_variables()
-#
-#inputs = tf.keras.layers.Input(shape=(observation_dim,))
-#dense1 = tf.keras.layers.Dense(
-#    units=200, activation=tf.nn.relu)(inputs)
-#outputs = tf.keras.layers.Dense(
-#    units=action_dim, activation=tf.nn.sigmoid)(dense1)
-#model1 = tf.keras.Model(inputs=inputs, outputs=outputs)
-#model1.predict(np.atleast_2d(observation))
-#
-#weights = model1.get_weights()
-#model1.set_weights(model1.get_weights())
-#w = weights[0]
-#noise = np.random.randn(*w.shape)
-#sigma = 0.001
-#w = w + sigma * noise
+
+def update_weights(weights, update, factor):
+    new_weights = []
+    for w1, w2 in zip(weights, update):
+        new_weights.append(w1 + w2 * factor)
+    return new_weights
 
 def mutate_weights(weights, sigma):
-    new_weights = []
-    for w in weights:
-        noise = np.random.randn(*w.shape)
-        w = w + sigma * noise
-        new_weights.append(w)
-    return new_weights
+    mutation = np.random.randn(len(weights))
+    return weights + mutation * sigma
 
 class EvoModel:
     def __init__(self, observation_space, action_space):
@@ -60,11 +34,18 @@ class EvoModel:
             units=action_dim, activation=tf.nn.sigmoid)(dense1)
         self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def get_weights(self):
-        return self.model.get_weights()
+    def get_1d_weights(self):
+        return np.concatenate(
+            [w.ravel() for w in self.model.get_weights()]
+        )
 
-    def set_weights(self, weights):
-        self.model.set_weights(weights)
+    def set_1d_weights(self, weights):
+        new_weights = []
+        index = 0
+        for w in self.model.get_weights():
+            new_weights.append(weights[index:index+w.size].reshape(w.shape))
+            index += w.size
+        self.model.set_weights(new_weights)
 
     def predict(self, observation):
         action = self.model.predict(np.atleast_2d(observation))[0]
@@ -78,12 +59,9 @@ class EvoModel:
             observation_space=self.observation_space,
             action_space=self.action_space,
         )
-        new_model.set_weights(mutate_weights(self.get_weights(), sigma))
+        new_model.set_1d_weights(mutate_weights(self.get_1d_weights(), sigma))
         return new_model
 
-model = EvoModel(env.observation_space, env.action_space)
-model.predict(observation)
-model = model.mutate(0.001)
 
 def play_episode(env, model, render=False):
     observation = env.reset()
@@ -92,13 +70,79 @@ def play_episode(env, model, render=False):
     episode_length = 0
     while not done:
         action = model.predict(observation)
-        next_observation, reward, done, _ = env.step(action)
+        observation, reward, done, _ = env.step(action)
         episode_return += reward
         episode_length += 1
         if render:
             env.render()
     return episode_return, episode_length
 
-play_episode(env, model, render=True)
+
+def evolute(
+    env,
+    iterations=100,
+    population_size=10,
+    sigma=0.5,
+    learning_rate=0.03,
+    weights=None
+):
+    model = EvoModel(env.observation_space, env.action_space)
+    sigma = 0.2
+    learning_rate = 0.03
+    iterations = 100
+    population_size = 10
+
+    if weights is None:
+        weights = model.get_1d_weights()
+
+    iteration_reward = np.zeros(iterations)
+    for t in range(iterations):
+        t0 = datetime.now()
+
+        returns = np.zeros(population_size) # episode return
+        mutations = np.random.randn(population_size, len(weights))
+
+        for p in range(population_size):
+            new_weights = weights + mutations[p] * sigma
+            model.set_1d_weights(new_weights)
+            episode_return, episode_length = play_episode(env, model, render=False)
+            returns[p] = episode_return
+
+
+        m = returns.mean()
+        s = returns.std()
+        if s == 0:
+            continue
+
+        iteration_reward[t] = m
+        print ("Iteration reward:", m)
+        A = (returns - m) / s
+
+        weights = weights + learning_rate / (population_size * sigma) * np.dot(mutations.T, A)
+
+        # update the learning rate
+        learning_rate *= 0.992354
+        print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
+
+        if t != 0 and t % 10 == 0:
+            model.set_1d_weights(weights)
+            episode_return, episode_length = play_episode(env, model, render=True)
+
+    return weights
+
+
+
+def main():
+    set_random_seed(0)
+    env = gym.make("BipedalWalkerHardcore-v2")
+    weights = evolute(env)
+    np.savez("params", *weights)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
 
 
