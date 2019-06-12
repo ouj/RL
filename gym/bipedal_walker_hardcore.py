@@ -95,7 +95,7 @@ def evolute(
     env,
     iterations=100,
     population_size=10,
-    sigma=0.1,
+    sigma=1.0,
     learning_rate=0.03,
     weights=None
 ):
@@ -130,6 +130,9 @@ def evolute(
 
         # update the learning rate
         learning_rate *= 0.992354
+        sigma *= 0.999
+        sigma = max(0.1, sigma)
+
         print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
 
         if t != 0 and t % 10 == 0:
