@@ -78,6 +78,13 @@ def play_episode(env, model, render=False):
             env.render()
     return episode_return, episode_length
 
+def save_weight(weights, filename="evolution.npz"):
+    np.savez(filename, weights)
+
+def load_weight(filename="evolution.npz"):
+    if not os.path.exists(filename):
+        return None
+    return np.load(filename)
 
 def evolute(
     env,
@@ -128,28 +135,21 @@ def evolute(
         if t != 0 and t % 10 == 0:
             model.set_1d_weights(weights)
             episode_return, episode_length = play_episode(env, model, render=True)
+            save_weight(weights)
 
     return weights
-
-def save_weight(filename, weights):
-    np.savez(filename, weights)
-
-def load_weight(filename):
-    if not os.path.exists(filename):
-        return None
-    return np.load(filename)
 
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalkerHardcore-v2")
-    weights = load_weight("evolution.npz")
+    weights = load_weight()
     weights = evolute(
         env,
         iterations=1000,
         population_size=100,
         weights=weights
     )
-    save_weight("evolution.npz", weights)
+    save_weight(weights)
 
 
 if __name__ == "__main__":
