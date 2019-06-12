@@ -10,17 +10,6 @@ def set_random_seed(seed):
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
-
-def update_weights(weights, update, factor):
-    new_weights = []
-    for w1, w2 in zip(weights, update):
-        new_weights.append(w1 + w2 * factor)
-    return new_weights
-
-def mutate_weights(weights, sigma):
-    mutation = np.random.randn(len(weights))
-    return weights + mutation * sigma
-
 class EvoModel:
     def __init__(self, observation_space, action_space):
         self.observation_space = observation_space
@@ -132,7 +121,13 @@ def evolute(
         # update the learning rate
         learning_rate *= 0.992354
         sigma = max(0.1, sigma * 0.99)
-        print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
+        print(
+            "Iter:", t,
+            "Avg Reward: %.3f" % m,
+            "Max:", returns.max(),
+            "Sigma:", sigma,
+            "Duration:", (datetime.now() - t0)
+        )
 
         if t != 0 and t % 10 == 0:
             model.set_1d_weights(weights)
@@ -147,6 +142,7 @@ def main():
     weights = evolute(
         env,
         iterations=1000,
+        sigma=10,
         population_size=100,
     )
     save_weight(weights)
@@ -154,8 +150,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
