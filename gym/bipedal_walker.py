@@ -53,8 +53,8 @@ def create_networks(
 class DDPG:
     def __init__(self, env, max_episode_length):
         self.action_noise = 0.1
-        self.gamma = 0.99
-        self.decay = 0.99
+        self.gamma = 0.999
+        self.decay = 0.995
         self.mu_learning_rate=1e-3
         self.q_learning_rate=1e-3
 
@@ -228,13 +228,13 @@ class DDPG:
                 self.test()
 
             if e > 0 and e % save_checkpoint_every == 0:
-                self.save_checkpoint()
+                self.save_checkpoint(global_step=e)
 
         return episode_returns, q_losses, mu_losses
 
 
 
-    def update(self, episode_length, batch_size=512):
+    def update(self, episode_length, batch_size=64):
         q_losses = []
         mu_losses = []
         for _ in range(episode_length):
@@ -276,11 +276,12 @@ class DDPG:
             )
 
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, global_step=None):
         model_file = os.path.join(self.checkpoint_dir, "model")
         os.makedirs(os.path.basename(model_file), exist_ok=True)
         save_path = self.saver.save(
             self.session,
+            global_step=global_step,
             save_path=model_file)
         print ("Saved checkpoint to", save_path)
 
@@ -300,7 +301,7 @@ class DDPG:
 
 def play3(env):
     ddpg = DDPG(env, max_episode_length=1600)
-    ddpg.init(hidden_layers=[300, 300, 300])
+    ddpg.init(hidden_layers=[200, 200])
     ddpg.restore_checkpoint()
     for _ in range(10):
         episode_return, episode_length = ddpg.play_episode(
@@ -311,10 +312,10 @@ def play3(env):
 
 def train3(env):
     ddpg = DDPG(env, max_episode_length=1600)
-    ddpg.init(hidden_layers=[300, 300, 300])
+    ddpg.init(hidden_layers=[200, 200])
     ddpg.restore_checkpoint()
     episode_returns, q_losses, mu_losses = ddpg.train(
-        episode_number=20000,
+        episode_number=15000,
         random_episodes=50,
         save_checkpoint_every=50
     )
