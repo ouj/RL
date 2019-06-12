@@ -143,7 +143,12 @@ def main():
     set_random_seed(0)
     env = gym.make("BipedalWalkerHardcore-v2")
     weights = load_weight("evolution.npz")
-    weights = evolute(env, weights=weights)
+    weights = evolute(
+        env,
+        iterations=1000,
+        population_size=100,
+        weights=weights
+    )
     save_weight("evolution.npz", weights)
 
 
