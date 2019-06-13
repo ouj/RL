@@ -59,7 +59,6 @@ class Agent:
         for _ in range(episode_iterations):
             action = self.get_action(model, observation)
             observation, reward, done, _ = self.env.step(action)
-            reward = max(-35, reward) #cap away the falling penalty
             episode_return += reward
             if render:
                 self.env.render()
@@ -91,7 +90,7 @@ class Agent:
 
         return model
 
-    def train(self, iterations=200, model=None):
+    def train(self, iterations=1000, model=None):
         if model is None:
             model = self.create_network_model(
                 self.env.observation_space.shape[0],
@@ -99,33 +98,28 @@ class Agent:
                 layer_sizes=(100,)
             )
 
-        episode_iterations = 1000
-        while episode_iterations <= 1600:
-            print("Episode lenght:", episode_iterations)
-            avg_reward = None
-            for t in range(iterations):
-                t0 = datetime.now()
-                model = self.explore(model, episode_iterations)
-                reward = self.play_episode(
-                    model, episode_iterations, render=(t % 10 == 0)
-                )
-                if avg_reward is None:
-                    avg_reward = reward
-                else:
-                    avg_reward = avg_reward * 0.9 + reward * 0.1
+        episode_iterations = 1600
+        print("Episode lenght:", episode_iterations)
+        avg_reward = None
+        for t in range(iterations):
+            t0 = datetime.now()
+            model = self.explore(model, episode_iterations)
+            reward = self.play_episode(
+                model, episode_iterations, render=(t % 10 == 0)
+            )
+            if avg_reward is None:
+                avg_reward = reward
+            else:
+                avg_reward = avg_reward * 0.9 + reward * 0.1
 
-                print(
-                    "Iteration:", t,
-                    "Reward:", reward,
-                    "Avg Reward: %.2f" % avg_reward,
-                    "Duration:", (datetime.now() - t0)
-                )
-                if t % 50 == 0:
-                    save_model(model)
-
-            episode_iterations += 100
-            save_model(model)
-
+            print(
+                "Iteration:", t,
+                "Reward:", reward,
+                "Avg Reward: %.2f" % avg_reward,
+                "Duration:", (datetime.now() - t0)
+            )
+            if t % 50 == 0:
+                save_model(model)
         return model
 
 
@@ -134,7 +128,7 @@ def main():
     env = gym.make("BipedalWalker-v2")
     agent = Agent(env)
     model = load_model()
-    model = agent.train(iterations=200, model=model)
+    model = agent.train(iterations=1000, model=model)
     save_model(model)
 
 
