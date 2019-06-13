@@ -27,8 +27,8 @@ class EvoModel:
 #        self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
         hl_size = 100
         self.model = []
-        self.model['W1'] = np.random.randn(24, hl_size) / np.sqrt(24)
-        self.model['W2'] = np.random.randn(hl_size, 4) / np.sqrt(hl_size)
+        self.model.append(np.random.randn(24, hl_size) / np.sqrt(24))
+        self.model.append(np.random.randn(hl_size, 4) / np.sqrt(hl_size))
 
     def get_weights(self):
         return self.model
@@ -38,9 +38,9 @@ class EvoModel:
 
     def predict(self, state):
 #        action = self.model.predict(np.atleast_2d(state))[0]
-        hl = np.matmul(state, self.model["W1"])
+        hl = np.matmul(state, self.model[0])
         hl = np.tanh(hl)
-        action = np.matmul(hl, self.model["W2"])
+        action = np.matmul(hl, self.model[1])
         action = np.tanh(action)
         return action
 
@@ -78,21 +78,21 @@ class Agent:
     def explore(self, model):
         weights = model.get_weights()
 
-        N = {} # mutations
+        N = [] # mutations
         R = np.zeros(self.population_size) # returns
-        for k, v in weights.items():
-            N[k] = np.random.randn(self.population_size, v.shape[0], v.shape[1])
+        for v in weights:
+            N.append(np.random.randn(self.population_size, v.shape[0], v.shape[1]))
 
         for p in range(self.population_size):
-            weights_try = {}
-            for k, v in weights.items():
-                weights_try[k] = v + self.sigma * N[k][p]
+            weights_try = []
+            for v, n in zip(weights, N):
+                weights_try.append(v + self.sigma * n[p])
 
             model.set_weights(weights_try)
             R[p] = self.play_episode(model, render=False)
 
         A = (R - np.mean(R)) / np.std(R)
-        for k in weights:
+        for k in range(len(weights)):
             weights[k] = weights[k] + self.learning_rate/(self.population_size * self.sigma) * np.dot(N[k].transpose(1, 2, 0), A)
         model.set_weights(weights)
 
@@ -105,7 +105,7 @@ class Agent:
         for t in range(iterations):
             t0 = datetime.now()
             self.explore(model)
-            reward = self.play_episode(model, render=(t % 100 == 0))
+            reward = self.play_episode(model, render=(t % 10 == 0))
             if avg_reward is None:
                 avg_reward = reward
             else:
