@@ -37,7 +37,7 @@ class Agent:
     def create_network_model(self, state_dim, action_dim, layer_sizes=(100, )):
         model = []
         dim = state_dim
-        for h in layer_sizes[:-1]:
+        for h in layer_sizes:
             model.append(np.random.randn(dim, h) / np.sqrt(dim))
             dim = h
         model.append(np.random.randn(dim, action_dim) / np.sqrt(action_dim))
