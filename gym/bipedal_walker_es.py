@@ -52,7 +52,7 @@ class Agent:
             x = np.tanh(np.matmul(x, w))
         return x
 
-    def play_episode(self, model, episode_iterations=300, render=False):
+    def play_episode(self, model, episode_iterations, render=False):
         observation = self.env.reset()
         done = False
         episode_return = 0
@@ -69,7 +69,7 @@ class Agent:
     def get_action(self, model, state):
         return self.predict(model, state)
 
-    def explore(self, model, episode_iterations=500):
+    def explore(self, model, episode_iterations):
         N = [] # mutations
         R = np.zeros(self.population_size) # returns
         for v in model:
