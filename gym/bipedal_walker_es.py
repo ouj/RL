@@ -68,10 +68,6 @@ class Agent:
         self.sigma = sigma
         self.population_size = population_size
         self.decay = decay
-
-        state_dim = self.env.observation_space.shape[0]
-        self.model = EvoModel(state_dim, self.env.action_space)
-        self.weights = self.model.get_1d_weights()
         self.exploration = self.INITIAL_EXPLORATION
 
     def play_episode(self, model, render=False):
@@ -96,46 +92,44 @@ class Agent:
         return action
 
     def train(self, iterations=100):
+        model = EvoModel(self.env.observation_space.shape[0], self.env.action_space)
+        weights = self.model.get_1d_weights()
+
         iteration_reward = np.zeros(iterations)
         for t in range(iterations):
             t0 = datetime.now()
 
-            returns = np.zeros(self.population_size) # episode return
-            mutations = np.random.randn(self.population_size, len(self.weights))
+            R = np.zeros(self.population_size) # episode return
+            N = np.random.randn(self.population_size, len(weights))
 
             for p in range(self.population_size):
-                new_weights = self.weights + mutations[p] * self.sigma
-                self.model.set_1d_weights(new_weights)
-                episode_return, episode_length = self.play_episode(render=False)
-                returns[p] = episode_return
+                new_weights = self.weights + N[p] * self.sigma
+                model.set_1d_weights(new_weights)
+                episode_return = self.play_episode(render=False)
+                R[p] = episode_return
 
 
-            m = returns.mean()
-            s = returns.std()
-            if s == 0:
-                continue
+            A = (R - R.mean()) / R.std()
+            iteration_reward[t] = R.mean()
+            print ("Iteration reward:", iteration_reward[t])
 
-            iteration_reward[t] = m
-            print ("Iteration reward:", m)
-            A = (returns - m) / s
-
-            self.weights = self.weights + self.learning_rate / (self.population_size * self.sigma) * np.dot(mutations.T, A)
+            weights = weights + self.learning_rate / (self.population_size * self.sigma) * np.dot(R.T, A)
 
             # update the learning rate
             self.learning_rate *= self.decay
-            print("Iter:", t, "Avg Reward: %.3f" % m, "Max:", returns.max(), "Duration:", (datetime.now() - t0))
+            print("Iter:", t, "Avg Reward: %.3f" % R.mean(), "Max:", R.max(), "Duration:", (datetime.now() - t0))
 
             if t != 0 and t % 10 == 0:
                 self.model.set_1d_weights(self.weights)
                 episode_return, episode_length = self.play_episode(render=True)
 
-        def save_weight(filename="evolution.npy"):
-            np.savetxt(filename, self.weights)
+        def save_weight(weights, filename="evolution.npy"):
+            np.savetxt(filename, weights)
 
         def load_weight(filename="evolution.npy"):
             if not os.path.exists(filename):
                 return None
-            self.weights = np.load(filename)
+            return np.load(filename)
 
 
 def main():
