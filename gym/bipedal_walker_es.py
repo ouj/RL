@@ -11,14 +11,15 @@ def set_random_seed(seed):
     np.random.seed(seed)
 
 
-def save_weights(model, filename="evolution.npz"):
-    np.savez(filename, model)
+def save_model(model, filename="evolution.npz"):
+    np.savez(filename, *model)
 
 
-def load_weights(filename="evolution.npz"):
+def load_model(filename="evolution.npz"):
     if not os.path.exists(filename):
         return None
-    return np.load(filename)
+    npzfile = np.load(filename, allow_pickle=True)
+    return [v for _, v in sorted(npzfile.items())]
 
 
 class Agent:
@@ -114,9 +115,11 @@ class Agent:
                     "Avg Reward: %.2f" % avg_reward,
                     "Duration:", (datetime.now() - t0)
                 )
-                save_weights(model)
+                if t % 50 == 0:
+                    save_model(model)
+
             episode_iterations += 50
-            save_weights(model)
+            save_model(model)
 
         return model
 
@@ -125,9 +128,9 @@ def main():
     set_random_seed(0)
     env = gym.make("BipedalWalker-v2")
     agent = Agent(env)
-    model = load_weights()
+    model = load_model()
     model = agent.train(iterations=200, model=model)
-    save_weights(model)
+    save_model(model)
 
 
 
