@@ -11,11 +11,11 @@ def set_random_seed(seed):
     np.random.seed(seed)
 
 
-def save_weights(model, filename="evolution.npy"):
-    np.savetxt(filename, model)
+def save_weights(model, filename="evolution.npz"):
+    np.savez(filename, model)
 
 
-def load_weights(filename="evolution.npy"):
+def load_weights(filename="evolution.npz"):
     if not os.path.exists(filename):
         return None
     return np.load(filename)
@@ -87,11 +87,12 @@ class Agent:
 
         return model
 
-    def train(self, iterations=100, model=None):
+    def train(self, iterations=200, model=None):
         if model is None:
             model = self.create_network_model(
                 self.env.observation_space.shape[0],
-                self.env.action_space.shape[0]
+                self.env.action_space.shape[0],
+                layer_sizes=(50, 50)
             )
 
         episode_iterations = 100
@@ -113,6 +114,7 @@ class Agent:
                     "Avg Reward: %.2f" % avg_reward,
                     "Duration:", (datetime.now() - t0)
                 )
+                save_weights(model)
             episode_iterations += 50
             save_weights(model)
 
@@ -124,7 +126,7 @@ def main():
     env = gym.make("BipedalWalker-v2")
     agent = Agent(env)
     model = load_weights()
-    model = agent.train(400, model=model)
+    model = agent.train(iterations=200, model=model)
     save_weights(model)
 
 
