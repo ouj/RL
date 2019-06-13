@@ -93,10 +93,10 @@ class Agent:
             model = self.create_network_model(
                 self.env.observation_space.shape[0],
                 self.env.action_space.shape[0],
-                layer_sizes=(50, 50)
+                layer_sizes=(50, 50, 50)
             )
 
-        episode_iterations = 100
+        episode_iterations = 300
         while episode_iterations <= 1600:
             print("Episode lenght:", episode_iterations)
             avg_reward = None
