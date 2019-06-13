@@ -50,30 +50,23 @@ class EvoModel:
 
 
 class Agent:
-
-    INITIAL_EXPLORATION = 1.0
-    FINAL_EXPLORATION = 0.0
-    EXPLORATION_DEC_STEPS = 1000000
-
     def __init__(
         self,
         env=gym.make('BipedalWalker-v2'),
         population_size=50,
         sigma=0.1,
         learning_rate=0.01,
-        decay = 0.999,
     ):
         self.env = env
         self.learning_rate = learning_rate
         self.sigma = sigma
         self.population_size = population_size
-        self.decay = decay
 
-    def play_episode(self, model, render=False):
+    def play_episode(self, model, max_iterations=300, render=False):
         observation = self.env.reset()
         done = False
         episode_return = 0
-        for _ in range(300):
+        for _ in range(max_iterations):
             action = self.get_action(model, observation)
             observation, reward, done, _ = self.env.step(action)
             episode_return += reward
@@ -85,7 +78,10 @@ class Agent:
         return model.predict(state)
 
     def train(self, iterations=100):
-        model = EvoModel(self.env.observation_space.shape[0], self.env.action_space)
+        model = EvoModel(
+            self.env.observation_space.shape[0],
+            self.env.action_space
+        )
         weights = model.get_1d_weights()
 
         iteration_reward = np.zeros(iterations)
@@ -106,16 +102,20 @@ class Agent:
             iteration_reward[t] = R.mean()
             print ("Iteration reward:", iteration_reward[t])
 
-            updates = self.learning_rate / (self.population_size * self.sigma) * np.dot(N.T, A)
+            updates = np.dot(N.T, A)
+            updates *= self.learning_rate / (self.population_size * self.sigma)
             weights = weights + updates
 
-            # update the learning rate
-            self.learning_rate *= self.decay
-            print("Iter:", t, "Avg Reward: %.3f" % R.mean(), "Max:", R.max(), "Duration:", (datetime.now() - t0))
+            print(
+                "Iteration:", t,
+                "Avg Reward: %.3f" % R.mean(),
+                "Max:", R.max(),
+                "Duration:", (datetime.now() - t0)
+            )
 
             if t != 0 and t % 10 == 0:
                 model.set_1d_weights(weights)
-                self.play_episode(model, render=True)
+                self.play_episode(model, max_iterations=1600, render=True)
 
         def save_weight(weights, filename="evolution.npy"):
             np.savetxt(filename, weights)
@@ -130,7 +130,7 @@ def main():
     set_random_seed(0)
     env = gym.make("BipedalWalker-v2")
     agent = Agent(env)
-    agent.train()
+    agent.train(400)
 
 
 
