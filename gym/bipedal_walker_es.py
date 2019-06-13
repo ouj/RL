@@ -12,6 +12,7 @@ def set_random_seed(seed):
 
 
 def save_model(model, filename="evolution.npz"):
+    print ("Saved model to", filename)
     np.savez(filename, *model)
 
 
@@ -19,6 +20,7 @@ def load_model(filename="evolution.npz"):
     if not os.path.exists(filename):
         return None
     npzfile = np.load(filename, allow_pickle=True)
+    print ("Loded model from", filename)
     return [v for _, v in sorted(npzfile.items())]
 
 
@@ -103,7 +105,9 @@ class Agent:
             for t in range(iterations):
                 t0 = datetime.now()
                 model = self.explore(model, episode_iterations)
-                reward = self.play_episode(model, render=(t % 10 == 0))
+                reward = self.play_episode(
+                    model, episode_iterations, render=(t % 10 == 0)
+                )
                 if avg_reward is None:
                     avg_reward = reward
                 else:
