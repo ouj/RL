@@ -59,6 +59,7 @@ class Agent:
         for _ in range(episode_iterations):
             action = self.get_action(model, observation)
             observation, reward, done, _ = self.env.step(action)
+            reward = max(-35, reward) #cap away the falling penalty
             episode_return += reward
             if render:
                 self.env.render()
@@ -95,10 +96,10 @@ class Agent:
             model = self.create_network_model(
                 self.env.observation_space.shape[0],
                 self.env.action_space.shape[0],
-                layer_sizes=(50, 50, 50)
+                layer_sizes=(100,)
             )
 
-        episode_iterations = 300
+        episode_iterations = 1000
         while episode_iterations <= 1600:
             print("Episode lenght:", episode_iterations)
             avg_reward = None
@@ -122,7 +123,7 @@ class Agent:
                 if t % 50 == 0:
                     save_model(model)
 
-            episode_iterations += 50
+            episode_iterations += 100
             save_model(model)
 
         return model
