@@ -11,6 +11,16 @@ def set_random_seed(seed):
     np.random.seed(seed)
 
 
+def save_weights(model, filename="evolution.npy"):
+    np.savetxt(filename, model)
+
+
+def load_weights(filename="evolution.npy"):
+    if not os.path.exists(filename):
+        return None
+    return np.load(filename)
+
+
 class Agent:
     def __init__(
         self,
@@ -77,43 +87,45 @@ class Agent:
 
         return model
 
-    def train(self, iterations=100):
-        model = self.create_network_model(
-            self.env.observation_space.shape[0],
-            self.env.action_space.shape[0]
-        )
-        avg_reward = None
-        for t in range(iterations):
-            t0 = datetime.now()
-            model = self.explore(model)
-            reward = self.play_episode(model, render=(t % 10 == 0))
-            if avg_reward is None:
-                avg_reward = reward
-            else:
-                avg_reward = avg_reward * 0.9 + reward * 0.1
-
-            print(
-                "Iteration:", t,
-                "Reward:", reward,
-                "Avg Reward: %.2f" % avg_reward,
-                "Duration:", (datetime.now() - t0)
+    def train(self, iterations=100, model=None):
+        if model is None:
+            model = self.create_network_model(
+                self.env.observation_space.shape[0],
+                self.env.action_space.shape[0]
             )
 
+        episode_iterations = 100
+        while episode_iterations <= 1600:
+            print("Episode lenght:", episode_iterations)
+            avg_reward = None
+            for t in range(iterations):
+                t0 = datetime.now()
+                model = self.explore(model, episode_iterations)
+                reward = self.play_episode(model, render=(t % 10 == 0))
+                if avg_reward is None:
+                    avg_reward = reward
+                else:
+                    avg_reward = avg_reward * 0.9 + reward * 0.1
 
-    def save_weights(self, model, filename="evolution.npy"):
-        np.savetxt(filename, model)
+                print(
+                    "Iteration:", t,
+                    "Reward:", reward,
+                    "Avg Reward: %.2f" % avg_reward,
+                    "Duration:", (datetime.now() - t0)
+                )
+            episode_iterations += 50
+            save_weights(model)
 
-    def load_weights(self, filename="evolution.npy"):
-        if not os.path.exists(filename):
-            return None
-        return np.load(filename)
+        return model
 
 
 def main():
     set_random_seed(0)
     env = gym.make("BipedalWalker-v2")
     agent = Agent(env)
-    agent.train(400)
+    model = load_weights()
+    model = agent.train(400, model=model)
+    save_weights(model)
 
 
 
