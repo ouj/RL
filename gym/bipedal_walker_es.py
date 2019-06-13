@@ -21,7 +21,7 @@ class EvoModel:
         dense1 = tf.keras.layers.Dense(
             units=100,
             kernel_initializer=initializer,
-            activation=tf.nn.relu)(inputs)
+            activation=tf.nn.tanh)(inputs)
         outputs = tf.keras.layers.Dense(
             units=action_dim,
             kernel_initializer=initializer,
@@ -68,32 +68,25 @@ class Agent:
         self.sigma = sigma
         self.population_size = population_size
         self.decay = decay
-        self.exploration = self.INITIAL_EXPLORATION
 
     def play_episode(self, model, render=False):
         observation = self.env.reset()
         done = False
         episode_return = 0
-        while not done:
+        for _ in range(300):
             action = self.get_action(model, observation)
             observation, reward, done, _ = self.env.step(action)
             episode_return += reward
             if render: self.env.render()
+            if done: break
         return episode_return
 
     def get_action(self, model, state):
-        self.exploration = max(
-            self.FINAL_EXPLORATION,
-            self.exploration - self.INITIAL_EXPLORATION / self.EXPLORATION_DEC_STEPS)
-        if np.random.random() < self.exploration:
-            action = self.env.action_space.sample()
-        else:
-            action = model.predict(state)
-        return action
+        return model.predict(state)
 
     def train(self, iterations=100):
         model = EvoModel(self.env.observation_space.shape[0], self.env.action_space)
-        weights = self.model.get_1d_weights()
+        weights = model.get_1d_weights()
 
         iteration_reward = np.zeros(iterations)
         for t in range(iterations):
@@ -103,9 +96,9 @@ class Agent:
             N = np.random.randn(self.population_size, len(weights))
 
             for p in range(self.population_size):
-                new_weights = self.weights + N[p] * self.sigma
+                new_weights = weights + N[p] * self.sigma
                 model.set_1d_weights(new_weights)
-                episode_return = self.play_episode(render=False)
+                episode_return = self.play_episode(model, render=False)
                 R[p] = episode_return
 
 
@@ -113,15 +106,16 @@ class Agent:
             iteration_reward[t] = R.mean()
             print ("Iteration reward:", iteration_reward[t])
 
-            weights = weights + self.learning_rate / (self.population_size * self.sigma) * np.dot(R.T, A)
+            updates = self.learning_rate / (self.population_size * self.sigma) * np.dot(N.T, A)
+            weights = weights + updates
 
             # update the learning rate
             self.learning_rate *= self.decay
             print("Iter:", t, "Avg Reward: %.3f" % R.mean(), "Max:", R.max(), "Duration:", (datetime.now() - t0))
 
             if t != 0 and t % 10 == 0:
-                self.model.set_1d_weights(self.weights)
-                episode_return, episode_length = self.play_episode(render=True)
+                model.set_1d_weights(weights)
+                self.play_episode(model, render=True)
 
         def save_weight(weights, filename="evolution.npy"):
             np.savetxt(filename, weights)
