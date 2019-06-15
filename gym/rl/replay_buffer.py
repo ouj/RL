@@ -3,21 +3,21 @@ import numpy as np
 class ReplayBuffer:
     def __init__(
         self,
-        observation_dim,
-        action_dim,
+        observation_shape,
+        action_shape,
         max_size = 1000000
     ):
         self.index = 0
         self.size = 0
         self.max_size = max_size
         self.observations = np.zeros(
-            [max_size, observation_dim], dtype=np.float32
+            [max_size, *observation_shape], dtype=np.float32
         )
         self.next_observations = np.zeros(
-            [max_size, observation_dim], dtype=np.float32
+            [max_size, *observation_shape], dtype=np.float32
         )
         self.actions = np.zeros(
-            [max_size, action_dim], dtype=np.float32
+            [max_size, *action_shape], dtype=np.float32
         )
         self.rewards = np.zeros(max_size, dtype=np.float32)
         self.dones = np.zeros(max_size, dtype=np.float32)
