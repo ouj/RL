@@ -1,12 +1,11 @@
 #!/usr/bin/env python3.7
 import os
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
 from rl.replay_buffer import ReplayBuffer
 import matplotlib.pyplot as plt
-from datetime import datetime
 
 #%% Set random seeds
 def set_random_seed(seed):
@@ -20,11 +19,13 @@ def get_vars(scope):
 
 
 #%% Configuragtions
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.001
 BATCH_SIZE = 64
 GAMMA = 0.99
-DECAY = 0.995
+DECAY = 0.99
 MINIMAL_SAMPLES = 1000
+ITERATIONS = 20000
+DEMO_NUMBER = 10
 
 #%% Setup
 env = gym.make("CartPole-v1")
@@ -125,8 +126,6 @@ def play_once(env, epsilon, render=False):
         replay_buffer.store(observation, action, reward, next_observation, done)
         observation = next_observation
         steps += 1
-        if done and steps < 500:
-            reward -= 200
         total_return += reward
         if render:
             env.render()
@@ -149,43 +148,43 @@ def train():
         return session.run(q_loss, feed_dict)
 
 # %% main loop
-N = 20000
 losses = []
 returns = []
-for n in range(N):
+
+for n in range(ITERATIONS):
     epsilon = 1.0 / np.sqrt(n+1)
     steps, total_return = play_once(env, epsilon)
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         loss = train()
-        losses.append(losses)
+        losses.append(loss)
 
     if n != 0 and n % 10 == 0:
         print(
             "Episode:", n,
             "Returns:", total_return,
             "epsilon:", epsilon
-        ) 
+        )
 
 #%% Demo
 
 filename = os.path.basename(__file__).split('.')[0]
 monitor_dir = './' + filename + '_' + str(datetime.now())
 env = gym.wrappers.Monitor(env, monitor_dir)
-N = 10
-for n in range(N):
+for n in range(DEMO_NUMBER):
     play_once(env, 0.0, render=True)
-        
+
+# %%Close Environment
+env.close()
+
 #%% Report
+plt.figure()
 plt.plot(losses)
 plt.title("Q Losses")
-plt.show()
+plt.savefig(os.path.join(monitor_dir, 'q_loss.pdf'))
 
+plt.figure()
 plt.plot(returns)
 plt.title("Returns")
-plt.show()
-
-
-#%% Close env
-env.close()
+plt.savefig(os.path.join(monitor_dir, 'returns.pdf'))
