@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from rl.replay_buffer import ReplayBuffer
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 #%% Set random seeds
 def set_random_seed(seed):
@@ -20,10 +21,10 @@ def get_vars(scope):
 
 #%% Configuragtions
 LEARNING_RATE = 0.01
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 GAMMA = 0.99
 DECAY = 0.995
-MINIMAL_SAMPLES = 100
+MINIMAL_SAMPLES = 1000
 
 #%% Setup
 env = gym.make("CartPole-v1")
@@ -79,12 +80,6 @@ train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(
     q_loss
 )
 
-print([
-   (v_main.name, v_targ.name) for v_main, v_targ in zip(
-         get_vars('main'), get_vars('target')
-   )
-])
-
 # Copy main network params to target networks
 target_init = tf.group([
     tf.assign(v_targ, v_main)
@@ -119,7 +114,7 @@ def sample_action(env, observation, epsilon):
         })[0]
         return np.argmax(q_s_a)
 
-def play_once(epsilon, render=False):
+def play_once(env, epsilon, render=False):
     observation = env.reset()
     done = False
     steps = 0
@@ -129,8 +124,10 @@ def play_once(epsilon, render=False):
         next_observation, reward, done, _ = env.step(action)
         replay_buffer.store(observation, action, reward, next_observation, done)
         observation = next_observation
-        total_return += reward
         steps += 1
+        if done and steps < 500:
+            reward -= 200
+        total_return += reward
         if render:
             env.render()
     return steps, total_return
@@ -151,29 +148,13 @@ def train():
         session.run(target_update)
         return session.run(q_loss, feed_dict)
 
-#%% Overfit
-def overfitting():
-    for _ in range(steps):
-        batch = replay_buffer.sample_batch(BATCH_SIZE)
-        feed_dict = {
-            x: batch['s'],
-            x2: batch['s2'],
-            a: np.squeeze(batch['a']),
-            r: batch['r'],
-            d: batch['d']
-        }
-        for _ in range(100000):
-            session.run(train_op, feed_dict)
-            print (session.run(q_loss, feed_dict))
-        session.run(target_update)
-
 # %% main loop
 N = 20000
 losses = []
 returns = []
 for n in range(N):
     epsilon = 1.0 / np.sqrt(n+1)
-    steps, total_return = play_once(epsilon)
+    steps, total_return = play_once(env, epsilon)
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
@@ -188,9 +169,13 @@ for n in range(N):
         ) 
 
 #%% Demo
+
+filename = os.path.basename(__file__).split('.')[0]
+monitor_dir = './' + filename + '_' + str(datetime.now())
+env = gym.wrappers.Monitor(env, monitor_dir)
 N = 10
 for n in range(N):
-    play_once(0.0, render=True)
+    play_once(env, 0.0, render=True)
         
 #%% Report
 plt.plot(losses)
