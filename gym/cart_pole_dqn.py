@@ -1,5 +1,6 @@
 #!/usr/bin/env python3.7
 import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import gym
 import numpy as np
 import tensorflow as tf
@@ -138,6 +139,7 @@ def play_once(epsilon, render=False):
 def train():
     for _ in range(steps):
         batch = replay_buffer.sample_batch(BATCH_SIZE)
+
         feed_dict = {
             x: batch['s'],
             x2: batch['s2'],
@@ -183,15 +185,14 @@ for n in range(N):
             "Episode:", n,
             "Returns:", total_return,
             "epsilon:", epsilon
-        )
-        
+        ) 
+
 #%% Demo
 N = 10
 for n in range(N):
     play_once(0.0, render=True)
         
 #%% Report
-
 plt.plot(losses)
 plt.title("Q Losses")
 plt.show()
@@ -199,6 +200,7 @@ plt.show()
 plt.plot(returns)
 plt.title("Returns")
 plt.show()
+
 
 #%% Close env
 env.close()
