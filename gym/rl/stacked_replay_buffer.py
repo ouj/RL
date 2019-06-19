@@ -62,7 +62,7 @@ class StackedReplayBuffer:
 
     def sample_batch(self, batch_size=32):
         assert batch_size <= self.size
-        assert self.size < self.stack_size
+        assert self.size >= self.stack_size
 
         indexes = self.get_valid_indices(batch_size=batch_size)
 
