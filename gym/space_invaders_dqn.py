@@ -38,11 +38,11 @@ replay_buffer = StackedFrameReplayBuffer(
 def atleast_4d(x):
     return np.expand_dims(np.atleast_3d(x), axis=0) if x.ndim < 4 else x
 
-#%% Reset 
+#%% Reset
 
 tf.reset_default_graph()
 
-#%% Convolution Network 
+#%% Convolution Network
 
 def create_conv_net(x):
     w = tf.layers.Conv2D(
@@ -64,49 +64,49 @@ def create_conv_net(x):
 with tf.variable_scope("conv") as scope:
     x = tf.placeholder(
         shape=(
-            None, 
-            env.observation_space.shape[0], 
-            env.observation_space.shape[1], 
+            None,
+            env.observation_space.shape[0],
+            env.observation_space.shape[1],
             env.observation_space.shape[2] * STACK_SIZE
         ), dtype=tf.float32, name="x"
     )
     z = create_conv_net(x)
-    
-    
+
+
 with tf.variable_scope(scope, reuse=True):
     x2 = tf.placeholder(
         shape=(
-            None, 
-            env.observation_space.shape[0], 
-            env.observation_space.shape[1], 
+            None,
+            env.observation_space.shape[0],
+            env.observation_space.shape[1],
             env.observation_space.shape[2] * STACK_SIZE
         ), dtype=tf.float32, name="x2"
     )
     z2 = create_conv_net(x2)
 
-    
+
 #%% Q network
-    
+
 def create_dense_net(z, trainable=True):
     w = tf.keras.layers.Dense(
-        units=500, 
-        activation=tf.nn.relu, 
-        trainable=trainable, 
+        units=500,
+        activation=tf.nn.relu,
+        trainable=trainable,
         name="w")(z)
     v = tf.keras.layers.Dense(
-        units=500, 
-        activation=tf.nn.relu, 
-        trainable=trainable, 
+        units=500,
+        activation=tf.nn.relu,
+        trainable=trainable,
         name="v")(w)
     q = tf.keras.layers.Dense(
-        units=env.action_space.n, 
+        units=env.action_space.n,
         trainable=trainable,
         name="q")(v)
     return q
 
 w = tf.keras.layers.Dense(
-        units=500, 
-        activation=tf.nn.relu, 
+        units=500,
+        activation=tf.nn.relu,
         name="w")(z)
 
 with tf.variable_scope("main"):
@@ -155,7 +155,7 @@ session.run(target_init)
 
 def update_state(state, observation):
     return np.concatenate((state[:,:,STACK_SIZE-1:], observation), axis=2)
-    
+
 def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
@@ -175,11 +175,11 @@ def play_once(env, epsilon, render=False):
     while not done:
         action = sample_action(env, state, epsilon)
         observation, reward, done, _ = env.step(action)
-        
+
         next_state = update_state(state, observation)
-        
+
         replay_buffer.store(observation, action, reward, done)
-        
+
         steps += 1
         state = next_state
         total_return += reward
@@ -209,7 +209,7 @@ returns = []
 
 for n in range(ITERATIONS):
     epsilon = 1 / np.sqrt(n+1)
-    steps, total_return = play_once(env, epsilon, render=True)
+    steps, total_return = play_once(env, epsilon, render=False)
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
@@ -219,7 +219,7 @@ for n in range(ITERATIONS):
     if n != 0 and n % 10 == 0:
         print(
             "Episode:", n,
-            "Returns:", total_return,
+            "Average Returns:", np.mean(returns[n-10:]),
             "epsilon:", epsilon
         )
 

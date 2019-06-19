@@ -3,12 +3,12 @@ import numpy as np
 class StackedFrameReplayBuffer:
     def __init__(
         self,
-        frame_width, 
-        frame_height, 
+        frame_width,
+        frame_height,
         channels,
         stack_size,
         action_dim,
-        max_size = 1000000
+        max_size = 10000
     ):
         self.current = 0
         self.size = 0
@@ -54,13 +54,13 @@ class StackedFrameReplayBuffer:
         indices = np.zeros(batch_size, dtype=int)
         for i in range(batch_size):
             while True:
-                # use a lower bound and upper bound to avoid the edge of the 
-                # ring buffer. We will loss some sample, but is easier to 
+                # use a lower bound and upper bound to avoid the edge of the
+                # ring buffer. We will loss some sample, but is easier to
                 # than to dealing with edge cases
                 index = np.random.randint(self.stack_size, self.size - 1)
                 assert index >= self.stack_size
                 assert index != self.size
-                
+
 
                 if index >= self.current and index < self.current + self.stack_size:
                     # crossing the current pointer
@@ -80,22 +80,22 @@ class StackedFrameReplayBuffer:
         indices = self.get_valid_indices(batch_size=batch_size)
         states_shape = (
             batch_size,
-            self.frame_width, 
-            self.frame_height, 
+            self.frame_width,
+            self.frame_height,
             self.channels * self.stack_size
         )
         previous_states = np.zeros(shape=states_shape, dtype=np.float32)
         states = np.zeros(shape=states_shape, dtype=np.float32)
-            
-        
+
+
         for i, index in enumerate(indices):
             previous_states[i, ...] = self.get_state(index - 1)
             states[i, ...] = self.get_state(index)
 
         return dict(
-            s=previous_states, 
-            a=self.actions[indices], 
-            r=self.rewards[indices], 
-            s2=states, 
+            s=previous_states,
+            a=self.actions[indices],
+            r=self.rewards[indices],
+            s2=states,
             d=self.dones[indices]
         )
