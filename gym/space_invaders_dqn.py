@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from rl.stacked_replay_buffer import StackedFrameReplayBuffer
 from rl.helpers import set_random_seed
-from rl.ann import create_hidden_layers, get_vars
+from rl.ann import get_vars
 import matplotlib.pyplot as plt
 
 #%% Set random seeds
@@ -54,7 +54,7 @@ def create_conv_net(x):
     )(w)
     v = tf.layers.MaxPooling2D(pool_size=2, strides=2)(v)
     u = tf.layers.Conv2D(
-        filters=64, kernel_size=3, activation=tf.nn.relu
+        filters=64, kernel_size=4, activation=tf.nn.relu
     )(v)
     u = tf.layers.MaxPooling2D(pool_size=2, strides=2)(u)
     z = tf.layers.Flatten()(u)
@@ -89,12 +89,12 @@ with tf.variable_scope(scope, reuse=True):
 
 def create_dense_net(z, trainable=True):
     w = tf.keras.layers.Dense(
-        units=500,
+        units=100,
         activation=tf.nn.relu,
         trainable=trainable,
         name="w")(z)
     v = tf.keras.layers.Dense(
-        units=500,
+        units=100,
         activation=tf.nn.relu,
         trainable=trainable,
         name="v")(w)
@@ -209,15 +209,28 @@ def train(steps):
 returns = []
 
 for n in range(ITERATIONS):
+    milestone = (n != 0 and n % 10 == 0)
+
     epsilon = 1 / np.sqrt(n+1)
-    steps, total_return = play_once(env, epsilon, render=False)
+    steps, total_return = play_once(env, epsilon, render=True)
+    print (
+        "Episode", n,
+        "Return", total_return,
+        "Lenght", steps
+    )
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
+        t0 = datetime.now()
         loss = train(steps)
-        print ("Trained for %d steps, mean q loss %f" % (steps, loss))
+        t1 = datetime.now()
+        print (
+            "Trained Steps:", steps,
+            "Duration:", t1 - t0,
+             "Mean Q Loss:", loss
+        )
 
-    if n != 0 and n % 10 == 0:
+    if milestone:
         print(
             "Episode:", n,
             "Average Returns:", np.mean(returns[n-10:]),
