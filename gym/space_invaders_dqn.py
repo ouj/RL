@@ -4,6 +4,7 @@ from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
+from wrappers.atari_wrappers import EpisodicLifeEnv
 from rl.stacked_replay_buffer import StackedFrameReplayBuffer
 from rl.helpers import set_random_seed
 from rl.ann import get_vars
@@ -23,7 +24,8 @@ DEMO_NUMBER = 10
 STACK_SIZE = 4
 
 #%% Setup
-env = gym.make("SpaceInvaders-v4")
+real_env = gym.make("SpaceInvaders-v4")
+env = EpisodicLifeEnv(real_env)
 
 #%% Replay Buffer
 
@@ -241,9 +243,9 @@ for n in range(ITERATIONS):
 
 filename = os.path.basename(__file__).split('.')[0]
 monitor_dir = './' + filename + '_' + str(datetime.now())
-env = gym.wrappers.Monitor(env, monitor_dir)
+demo_env = gym.wrappers.Monitor(real_env, monitor_dir)
 for n in range(DEMO_NUMBER):
-    play_once(env, 0.0, render=True)
+    play_once(demo_env, 0.0, render=True)
 
 # %%Close Environment
 env.close()
