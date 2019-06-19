@@ -188,8 +188,9 @@ def play_once(env, epsilon, render=False):
     return steps, total_return
 
 #%% Train
-def train():
-    for _ in range(steps):
+def train(steps):
+    losses = np.zeros(steps)
+    for n in range(steps):
         batch = replay_buffer.sample_batch(BATCH_SIZE)
 
         feed_dict = {
@@ -201,10 +202,10 @@ def train():
         }
         session.run(train_op, feed_dict)
         session.run(target_update)
-        return session.run(q_loss, feed_dict)
+        losses[n] = session.run(q_loss, feed_dict)
+    return np.mean(losses)
 
 # %% main loop
-losses = []
 returns = []
 
 for n in range(ITERATIONS):
@@ -213,8 +214,8 @@ for n in range(ITERATIONS):
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
-        loss = train()
-        losses.append(loss)
+        loss = train(steps)
+        print ("Trained for %d steps, mean q loss %f" % (steps, loss))
 
     if n != 0 and n % 10 == 0:
         print(
@@ -235,10 +236,6 @@ for n in range(DEMO_NUMBER):
 env.close()
 
 #%% Report
-plt.figure()
-plt.plot(losses)
-plt.title("Q Losses")
-plt.savefig(os.path.join(monitor_dir, 'q_loss.pdf'))
 
 plt.figure()
 plt.plot(returns)
