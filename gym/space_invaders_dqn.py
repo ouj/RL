@@ -24,9 +24,6 @@ STACK_SIZE = 4
 
 #%% Setup
 env = gym.make("SpaceInvaders-v4")
-env.action_space.n
-a = np.zeros(env.observation_space.shape)
-(*env.observation_space.shape[0:2], env.observation_space.shape[2] * 4)
 
 #%% Replay Buffer
 
@@ -38,6 +35,9 @@ replay_buffer = StackedFrameReplayBuffer(
     action_dim=1,
 )
 
+def atleast_4d(x):
+    return np.expand_dims(np.atleast_3d(x), axis=0) if x.ndim < 4 else x
+
 #%% Reset 
 
 tf.reset_default_graph()
@@ -46,14 +46,17 @@ tf.reset_default_graph()
 
 def create_conv_net(x):
     w = tf.layers.Conv2D(
-        filters=32, kernel_size=8, strides=4, activation=tf.nn.relu
+        filters=32, kernel_size=8, activation=tf.nn.relu
     )(x)
+    w = tf.layers.MaxPooling2D(pool_size=4, strides=4)(w)
     v = tf.layers.Conv2D(
-        filters=64, kernel_size=4, strides=2, activation=tf.nn.relu
+        filters=64, kernel_size=4, activation=tf.nn.relu
     )(w)
+    v = tf.layers.MaxPooling2D(pool_size=2, strides=2)(v)
     u = tf.layers.Conv2D(
-        filters=64, kernel_size=3, strides=1, activation=tf.nn.relu
+        filters=64, kernel_size=3, activation=tf.nn.relu
     )(v)
+    u = tf.layers.MaxPooling2D(pool_size=2, strides=2)(u)
     z = tf.layers.Flatten()(u)
     return z
 
@@ -62,8 +65,9 @@ with tf.variable_scope("conv") as scope:
     x = tf.placeholder(
         shape=(
             None, 
-            *env.observation_space.shape[0:2], 
-            env.observation_space.shape[2] * 4
+            env.observation_space.shape[0], 
+            env.observation_space.shape[1], 
+            env.observation_space.shape[2] * STACK_SIZE
         ), dtype=tf.float32, name="x"
     )
     z = create_conv_net(x)
@@ -73,24 +77,24 @@ with tf.variable_scope(scope, reuse=True):
     x2 = tf.placeholder(
         shape=(
             None, 
-            *env.observation_space.shape[0:2], 
-            env.observation_space.shape[2] * 4
+            env.observation_space.shape[0], 
+            env.observation_space.shape[1], 
+            env.observation_space.shape[2] * STACK_SIZE
         ), dtype=tf.float32, name="x2"
     )
     z2 = create_conv_net(x2)
-
 
     
 #%% Q network
     
 def create_dense_net(z, trainable=True):
     w = tf.keras.layers.Dense(
-        units=20, 
+        units=500, 
         activation=tf.nn.relu, 
         trainable=trainable, 
         name="w")(z)
     v = tf.keras.layers.Dense(
-        units=20, 
+        units=500, 
         activation=tf.nn.relu, 
         trainable=trainable, 
         name="v")(w)
@@ -99,6 +103,11 @@ def create_dense_net(z, trainable=True):
         trainable=trainable,
         name="q")(v)
     return q
+
+w = tf.keras.layers.Dense(
+        units=500, 
+        activation=tf.nn.relu, 
+        name="w")(z)
 
 with tf.variable_scope("main"):
     q = create_dense_net(z, trainable=True)
@@ -142,8 +151,6 @@ session = tf.Session()
 session.run(init)
 session.run(target_init)
 
-
-
 # %% Play
 
 def update_state(state, observation):
@@ -153,9 +160,10 @@ def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
     else:
-        q_s_a = session.run(q, feed_dict={
-            x: [state]
-        })[0]
+        feed_dict={
+            x: atleast_4d(state)
+        }
+        q_s_a = session.run(q, feed_dict)[0]
         return np.argmax(q_s_a)
 
 def play_once(env, epsilon, render=False):
