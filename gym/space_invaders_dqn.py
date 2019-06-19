@@ -4,7 +4,7 @@ from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
-from rl.stacked_replay_buffer import StackedReplayBuffer
+from rl.stacked_replay_buffer import StackedFrameReplayBuffer
 from rl.helpers import set_random_seed
 from rl.ann import create_hidden_layers, get_vars
 import matplotlib.pyplot as plt
@@ -30,10 +30,12 @@ a = np.zeros(env.observation_space.shape)
 
 #%% Replay Buffer
 
-replay_buffer = StackedReplayBuffer(
-    observation_shape=env.observation_space.shape,
-    action_dim=1,
+replay_buffer = StackedFrameReplayBuffer(
+    frame_width=env.observation_space.shape[0],
+    frame_height=env.observation_space.shape[1],
+    channels=env.observation_space.shape[2],
     stack_size=STACK_SIZE,
+    action_dim=1,
 )
 
 #%% Reset 
@@ -141,13 +143,18 @@ session.run(init)
 session.run(target_init)
 
 
+
 # %% Play
-def sample_action(env, observation, epsilon):
+
+def update_state(state, observation):
+    return np.concatenate((state[:,:,STACK_SIZE-1:], observation), axis=2)
+    
+def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
     else:
         q_s_a = session.run(q, feed_dict={
-            x: np.atleast_2d(observation)
+            x: [state]
         })[0]
         return np.argmax(q_s_a)
 
@@ -156,12 +163,17 @@ def play_once(env, epsilon, render=False):
     done = False
     steps = 0
     total_return = 0
+    state = np.concatenate([observation] * 4, axis=2)
     while not done:
-        action = sample_action(env, observation, epsilon)
-        next_observation, reward, done, _ = env.step(action)
+        action = sample_action(env, state, epsilon)
+        observation, reward, done, _ = env.step(action)
+        
+        next_state = update_state(state, observation)
+        
         replay_buffer.store(observation, action, reward, done)
-        observation = next_observation
+        
         steps += 1
+        state = next_state
         total_return += reward
         if render:
             env.render()
@@ -188,7 +200,7 @@ losses = []
 returns = []
 
 for n in range(ITERATIONS):
-    epsilon = 1.0
+    epsilon = 1 / np.sqrt(n+1)
     steps, total_return = play_once(env, epsilon, render=True)
 
     returns.append(total_return)

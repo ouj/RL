@@ -1,11 +1,13 @@
 import numpy as np
 
-class StackedReplayBuffer:
+class StackedFrameReplayBuffer:
     def __init__(
         self,
-        observation_shape,
-        action_dim,
+        frame_width, 
+        frame_height, 
+        channels,
         stack_size,
+        action_dim,
         max_size = 1000000
     ):
         self.current = 0
@@ -13,13 +15,16 @@ class StackedReplayBuffer:
         self.stack_size = stack_size
         self.max_size = max_size
         self.observations = np.zeros(
-            [max_size, *observation_shape], dtype=np.float32
+            [max_size, frame_width, frame_height, channels], dtype=np.float32
         )
         self.actions = np.zeros(
             [max_size, action_dim], dtype=np.float32
         )
         self.rewards = np.zeros(max_size, dtype=np.float32)
         self.dones = np.zeros(max_size, dtype=np.float32)
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.channels = channels
 
     def number_of_samples(self):
         return self.size
@@ -42,18 +47,26 @@ class StackedReplayBuffer:
                     self.stack_size, self.stack_size - 1
                 )
             )
-        return self.observations[index - self.stack_size + 1:index+1, ...]
+        state = self.observations[index - self.stack_size + 1:index + 1, ...]
+        return np.concatenate(state, axis=2)
 
     def get_valid_indices(self, batch_size):
-        indices = np.zeros(batch_size)
+        indices = np.zeros(batch_size, dtype=int)
         for i in range(batch_size):
             while True:
-                index = np.random.randint(0, self.size - 1)
-                if index < self.stack_size:
-                    continue
-                elif index >= self.current and index - self.stack_size <= self.current:
+                # use a lower bound and upper bound to avoid the edge of the 
+                # ring buffer. We will loss some sample, but is easier to 
+                # than to dealing with edge cases
+                index = np.random.randint(self.stack_size, self.size - 1)
+                assert index >= self.stack_size
+                assert index != self.size
+                
+
+                if index >= self.current and index < self.current + self.stack_size:
+                    # crossing the current pointer
                     continue
                 elif self.dones[index - self.stack_size:index].any():
+                    # check is there is any done flag in previous state
                     continue
                 else:
                     break
@@ -64,11 +77,25 @@ class StackedReplayBuffer:
         assert batch_size <= self.size
         assert self.size >= self.stack_size
 
-        indexes = self.get_valid_indices(batch_size=batch_size)
+        indices = self.get_valid_indices(batch_size=batch_size)
+        states_shape = (
+            batch_size,
+            self.frame_width, 
+            self.frame_height, 
+            self.channels * self.stack_size
+        )
+        previous_states = np.zeros(shape=states_shape, dtype=np.float32)
+        states = np.zeros(shape=states_shape, dtype=np.float32)
+            
+        
+        for i, index in enumerate(indices):
+            previous_states[i, ...] = self.get_state(index - 1)
+            states[i, ...] = self.get_state(index)
 
         return dict(
-            s=self.observations[indexes],
-            a=self.actions[indexes],
-            r=self.rewards[indexes],
-            d=self.dones[indexes]
+            s=previous_states, 
+            a=self.actions[indices], 
+            r=self.rewards[indices], 
+            s2=states, 
+            d=self.dones[indices]
         )
