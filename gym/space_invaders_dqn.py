@@ -1,5 +1,4 @@
 #!/usr/bin/env python3.7
-import itertools
 import os
 import sys
 from collections import deque
@@ -29,7 +28,8 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
-MINIMAL_SAMPLES = 1000
+MINIMAL_SAMPLES = 100
+MAXIMAL_SAMPLES = 1000
 ITERATIONS = 20000
 DEMO_NUMBER = 10
 STACK_SIZE = 4
@@ -206,22 +206,21 @@ target_q_layer = QLayer(output_dim=env.action_space.n, scope="target", trainable
 Q2 = target_q_layer(Z2)
 
 q_loss = compute_Q_loss(Q, Q2, R, D, A)
+tf.summary.scalar('QLoss', q_loss)
 train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
 
 image_preprocessor = ImagePreprocessor(*env.observation_space.shape)
 
 session = tf.Session()
+
 session.run(tf.global_variables_initializer())
 target_q_layer.copy_from(q_layer, session=session)
-target_q_layer.is_equal(q_layer, session=session)
-target_q_layer.update_from(q_layer, decay=0.9, session=session)
 
+merged_summary = tf.summary.merge_all()
 writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
 
 # Frame Stack
-
-
 class FrameStack:
     def __init__(self, initial_frame, stack_size=STACK_SIZE):
         self.stack = deque(maxlen=stack_size)
@@ -236,11 +235,9 @@ class FrameStack:
         return stacked_state
 
 
-#%% Replay Buffer
-
-
+# Replay Buffer
 class SimpleReplayBuffer:
-    def __init__(self, max_size=10000):
+    def __init__(self, max_size=1000):
         self.buffer = deque(maxlen=max_size)
 
     def add(self, experience):
@@ -275,17 +272,15 @@ class SimpleReplayBuffer:
         return len(self.buffer)
 
 
-replay_buffer = SimpleReplayBuffer()
-# %% Play
+replay_buffer = SimpleReplayBuffer(max_size=MAXIMAL_SAMPLES)
 
-
+# Play
 def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
     else:
         feed_dict = {X: atleast_4d(state)}
         return session.run(predict_op, feed_dict)
-
 
 def play_once(env, epsilon, render=False):
     observation = env.reset()
@@ -313,9 +308,8 @@ def play_once(env, epsilon, render=False):
     return steps, total_return
 
 
-#%% Train
+# Train
 def train(steps):
-    losses = np.zeros(steps)
     for n in range(steps):
         batch = replay_buffer.sample_batch(BATCH_SIZE)
         feed_dict = {
@@ -325,13 +319,12 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        session.run(train_op, feed_dict)
+        s, _ = session.run([merged_summary, train_op], feed_dict)
         target_q_layer.update_from(q_layer, decay=DECAY, session=session)
-        losses[n] = session.run(q_loss, feed_dict)
-    return np.mean(losses)
+        writer.add_summary(s, n)
 
 
-# %% main loop
+# main loop
 returns = []
 
 epsilon = EPSILON_MAX
@@ -353,14 +346,14 @@ for n in range(ITERATIONS):
         )
     epsilon -= EPSILON_STEP
 
-#%% Demo
+# Demo
 for n in range(DEMO_NUMBER):
     play_once(test_env, 0.0, render=True)
 
-# %%Close Environment
+# Close Environment
 env.close()
 
-#%% Report
+# Report
 
 plt.figure()
 plt.plot(returns)
