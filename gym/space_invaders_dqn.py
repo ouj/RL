@@ -1,4 +1,5 @@
 #!/usr/bin/env python3.7
+import itertools
 import os
 import sys
 from collections import deque
@@ -8,8 +9,11 @@ import gym
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import itertools
 from rl.helpers import atleast_4d, set_random_seed
+from wrappers.atari_wrappers import EpisodicLifeEnv
+
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Set random seeds
 set_random_seed(0)
@@ -30,8 +34,9 @@ ITERATIONS = 20000
 DEMO_NUMBER = 10
 STACK_SIZE = 4
 
-
-env = gym.make("SpaceInvaders-v4")
+real_env = gym.make("SpaceInvaders-v4")
+env = EpisodicLifeEnv(real_env)
+test_env = gym.wrappers.Monitor(env, MONITOR_DIR)
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -95,9 +100,7 @@ class QLayer(tf.layers.Layer):
         self.W = tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W"
         )
-        self.Q = tf.layers.Dense(
-            units=output_dim, trainable=trainable, name="Q"
-        )
+        self.Q = tf.layers.Dense(units=output_dim, trainable=trainable, name="Q")
 
     def collect_variables(self):
         variables = []
@@ -138,7 +141,7 @@ class QLayer(tf.layers.Layer):
             [
                 tf.reduce_all(tf.equal(v_tgt, v_src))
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ],
+            ]
         )
         session = session if session is not None else tf.get_default_session()
         return session.run(equal_op)
@@ -148,12 +151,16 @@ class QLayer(tf.layers.Layer):
             x = self.W(inputs)
             return self.Q(x)
 
+
 def compute_Q_loss(Q, Q2, R, D, A):
-    selected_Q = tf.reduce_sum(Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1])
+    selected_Q = tf.reduce_sum(
+        Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
+    )
     next_Q = tf.math.reduce_max(Q2, axis=1)
     G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
     q_loss = tf.reduce_sum(tf.square(selected_Q - G))
     return q_loss
+
 
 tf.reset_default_graph()
 
@@ -211,6 +218,7 @@ writer.add_graph(session.graph)
 
 # Frame Stack
 
+
 class FrameStack:
     def __init__(self, initial_frame, stack_size=STACK_SIZE):
         self.stack = deque(maxlen=stack_size)
@@ -227,7 +235,8 @@ class FrameStack:
 
 #%% Replay Buffer
 
-class SimpleReplayBuffer():
+
+class SimpleReplayBuffer:
     def __init__(self, max_size=100000):
         self.buffer = deque(maxlen=max_size)
 
@@ -237,20 +246,12 @@ class SimpleReplayBuffer():
     def sample_batch(self, batch_size):
         buffer_size = len(self.buffer)
         indices = np.random.choice(
-            np.arange(buffer_size),
-            size = batch_size,
-            replace = False
+            np.arange(buffer_size), size=batch_size, replace=False
         )
         size = len(indices)
-        states = np.zeros(
-            [size, 210, 160, 4], dtype=np.float32
-        )
-        next_states = np.zeros(
-            [size, 210, 160, 4], dtype=np.float32
-        )
-        actions = np.zeros(
-            size, dtype=np.float32
-        )
+        states = np.zeros([size, 210, 160, 4], dtype=np.float32)
+        next_states = np.zeros([size, 210, 160, 4], dtype=np.float32)
+        actions = np.zeros(size, dtype=np.float32)
         rewards = np.zeros(size, dtype=np.float32)
         dones = np.zeros(size, dtype=np.float32)
 
@@ -262,13 +263,7 @@ class SimpleReplayBuffer():
             rewards[i] = reward
             dones[i] = done
 
-        return dict(
-            s=states,
-            s2=next_states,
-            a=actions,
-            r=rewards,
-            d=dones
-        )
+        return dict(s=states, s2=next_states, a=actions, r=rewards, d=dones)
 
     def store(self, state, action, reward, next_state, done):
         self.add((state, action, reward, next_state, done))
@@ -276,8 +271,10 @@ class SimpleReplayBuffer():
     def number_of_samples(self):
         return len(self.buffer)
 
+
 replay_buffer = SimpleReplayBuffer()
 # %% Play
+
 
 def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
@@ -285,6 +282,7 @@ def sample_action(env, state, epsilon):
     else:
         feed_dict = {X: atleast_4d(state)}
         return session.run(predict_op, feed_dict)
+
 
 def play_once(env, epsilon, render=False):
     observation = env.reset()
@@ -311,6 +309,7 @@ def play_once(env, epsilon, render=False):
             env.render()
     return steps, total_return
 
+
 #%% Train
 def train(steps):
     losses = np.zeros(steps)
@@ -328,6 +327,7 @@ def train(steps):
         losses[n] = session.run(q_loss, feed_dict)
     return np.mean(losses)
 
+
 # frame = image_preprocessor.transform(env.reset(), session=session)
 # frame_stack = FrameStack(frame)
 # feed_dict = {X: atleast_4d(frame_stack.get_state())}
@@ -339,7 +339,7 @@ returns = []
 
 for n in range(ITERATIONS):
     epsilon = 1 / np.sqrt(n + 1)
-    steps, total_return = play_once(env, epsilon, render=False)
+    steps, total_return = play_once(env, epsilon, render=True)
 
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
@@ -357,10 +357,8 @@ for n in range(ITERATIONS):
         )
 
 #%% Demo
-
-env = gym.wrappers.Monitor(env, MONITOR_DIR)
 for n in range(DEMO_NUMBER):
-    play_once(env, 0.0, render=True)
+    play_once(test_env, 0.0, render=True)
 
 # %%Close Environment
 env.close()
