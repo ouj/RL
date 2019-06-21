@@ -29,8 +29,8 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
-MINIMAL_SAMPLES = 100
-MAXIMAL_SAMPLES = 1000
+MINIMAL_SAMPLES = 1000
+MAXIMAL_SAMPLES = 100000
 ITERATIONS = 20000
 DEMO_NUMBER = 10
 
@@ -59,6 +59,7 @@ class ImagePreprocessor:
     def transform(self, frame, session=None):
         session = session if session is not None else tf.get_default_session()
         return session.run(self.output, feed_dict={self.input: frame})
+
 
 # Layer Definitions
 class ConvLayer(tf.layers.Layer):
@@ -174,24 +175,10 @@ tf.reset_default_graph()
 
 # Inputs
 X = tf.placeholder(
-    shape=(
-        None,
-        FRAME_HEIGHT,
-        FRAME_WIDTH,
-        STACK_SIZE,
-    ),
-    dtype=tf.float32,
-    name="x",
+    shape=(None, FRAME_HEIGHT, FRAME_WIDTH, STACK_SIZE), dtype=tf.float32, name="x"
 )
 X2 = tf.placeholder(
-    shape=(
-        None,
-        FRAME_HEIGHT,
-        FRAME_WIDTH,
-        STACK_SIZE,
-    ),
-    dtype=tf.float32,
-    name="x2",
+    shape=(None, FRAME_HEIGHT, FRAME_WIDTH, STACK_SIZE), dtype=tf.float32, name="x2"
 )
 R = tf.placeholder(dtype=tf.float32, shape=(None,), name="reward")  # reward
 D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
@@ -211,7 +198,7 @@ target_q_layer = QLayer(output_dim=env.action_space.n, scope="target", trainable
 Q2 = target_q_layer(Z2)
 
 q_loss = compute_Q_loss(Q, Q2, R, D, A)
-tf.summary.scalar('QLoss', q_loss)
+tf.summary.scalar("QLoss", q_loss)
 train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
 
 image_preprocessor = ImagePreprocessor()
@@ -239,12 +226,14 @@ class FrameStack:
         stacked_state = np.stack(self.stack, axis=2)
         return stacked_state
 
+
 replay_buffer = StackedFrameReplayBuffer(
     frame_height=FRAME_HEIGHT,
     frame_width=FRAME_WIDTH,
     stack_size=STACK_SIZE,
     action_dim=1,
-    max_size=MAXIMAL_SAMPLES
+    batch_size=BATCH_SIZE,
+    max_size=MAXIMAL_SAMPLES,
 )
 
 # Play
@@ -254,6 +243,7 @@ def sample_action(env, state, epsilon):
     else:
         feed_dict = {X: atleast_4d(state)}
         return session.run(predict_op, feed_dict)
+
 
 def play_once(env, epsilon, render=False):
     observation = env.reset()
@@ -284,7 +274,7 @@ def play_once(env, epsilon, render=False):
 # Train
 def train(steps):
     for n in range(steps):
-        batch = replay_buffer.sample_batch(BATCH_SIZE)
+        batch = replay_buffer.sample_batch()
         feed_dict = {
             X: batch["s"],
             X2: batch["s2"],
@@ -304,8 +294,13 @@ for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=True)
     print("Episode:", n, "Return:", total_return, "Step:", steps)
     returns.append(total_return)
+
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
-        train(steps)
+        t0 = datetime.now()
+        train_steps = int(replay_buffer.number_of_samples() / BATCH_SIZE)
+        train(train_steps)
+        print("Trained steps:", train_steps, "Duration:", datetime.now() - t0)
+
     if n != 0 and n % 10 == 0:
         print(
             "Episode:",
