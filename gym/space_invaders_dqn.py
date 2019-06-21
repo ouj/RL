@@ -26,13 +26,16 @@ LOGGING_DIR = os.path.join("log", FILENAME)
 
 # Hyperparameters
 LEARNING_RATE = 0.001
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
 MINIMAL_SAMPLES = 1000
 ITERATIONS = 20000
 DEMO_NUMBER = 10
 STACK_SIZE = 4
+EPSILON_MAX = 1.0
+EPSILON_MIN = 0.1
+EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / 500000
 
 real_env = gym.make("SpaceInvaders-v4")
 env = EpisodicLifeEnv(real_env)
@@ -237,7 +240,7 @@ class FrameStack:
 
 
 class SimpleReplayBuffer:
-    def __init__(self, max_size=100000):
+    def __init__(self, max_size=10000):
         self.buffer = deque(maxlen=max_size)
 
     def add(self, experience):
@@ -328,24 +331,17 @@ def train(steps):
     return np.mean(losses)
 
 
-# frame = image_preprocessor.transform(env.reset(), session=session)
-# frame_stack = FrameStack(frame)
-# feed_dict = {X: atleast_4d(frame_stack.get_state())}
-# np.argmax(session.run(Q, feed_dict))
-# session.run(tf.squeeze(tf.argmax(Q, axis=1)), feed_dict)
-
 # %% main loop
 returns = []
 
+epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
-    epsilon = 1 / np.sqrt(n + 1)
     steps, total_return = play_once(env, epsilon, render=True)
-
+    print("Episode:", n, "Return:", total_return)
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         loss = train(steps)
         print("Trained for %d steps, mean q loss %f" % (steps, loss))
-
     if n != 0 and n % 10 == 0:
         print(
             "Episode:",
@@ -355,6 +351,7 @@ for n in range(ITERATIONS):
             "epsilon:",
             epsilon,
         )
+    epsilon -= EPSILON_STEP
 
 #%% Demo
 for n in range(DEMO_NUMBER):
