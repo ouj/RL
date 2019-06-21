@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from rl.helpers import atleast_4d, set_random_seed
+from rl.stacked_frame_replay_buffer import StackedFrameReplayBuffer
 from wrappers.atari_wrappers import EpisodicLifeEnv
 
 
@@ -32,28 +33,32 @@ MINIMAL_SAMPLES = 100
 MAXIMAL_SAMPLES = 1000
 ITERATIONS = 20000
 DEMO_NUMBER = 10
+
+FRAME_WIDTH = 150
+FRAME_HEIGHT = 170
 STACK_SIZE = 4
+
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
 EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / 500000
 
 real_env = gym.make("SpaceInvaders-v4")
 env = EpisodicLifeEnv(real_env)
-test_env = gym.wrappers.Monitor(env, MONITOR_DIR)
+test_env = gym.wrappers.Monitor(real_env, MONITOR_DIR)
 
 # Image preprocessing
 class ImagePreprocessor:
-    def __init__(self, height, width, channels):
+    def __init__(self):
         with tf.variable_scope("image_preprocessor"):
-            self.input = tf.placeholder(shape=[height, width, channels], dtype=tf.uint8)
+            self.input = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
             t = tf.image.convert_image_dtype(self.input, dtype=tf.float32)
             t = tf.image.rgb_to_grayscale(t)
+            t = tf.image.crop_to_bounding_box(t, 20, 5, 170, 150)
             self.output = tf.squeeze(t)
 
     def transform(self, frame, session=None):
         session = session if session is not None else tf.get_default_session()
         return session.run(self.output, feed_dict={self.input: frame})
-
 
 # Layer Definitions
 class ConvLayer(tf.layers.Layer):
@@ -171,8 +176,8 @@ tf.reset_default_graph()
 X = tf.placeholder(
     shape=(
         None,
-        env.observation_space.shape[0],
-        env.observation_space.shape[1],
+        FRAME_HEIGHT,
+        FRAME_WIDTH,
         STACK_SIZE,
     ),
     dtype=tf.float32,
@@ -181,8 +186,8 @@ X = tf.placeholder(
 X2 = tf.placeholder(
     shape=(
         None,
-        env.observation_space.shape[0],
-        env.observation_space.shape[1],
+        FRAME_HEIGHT,
+        FRAME_WIDTH,
         STACK_SIZE,
     ),
     dtype=tf.float32,
@@ -209,7 +214,7 @@ q_loss = compute_Q_loss(Q, Q2, R, D, A)
 tf.summary.scalar('QLoss', q_loss)
 train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
 
-image_preprocessor = ImagePreprocessor(*env.observation_space.shape)
+image_preprocessor = ImagePreprocessor()
 
 session = tf.Session()
 
@@ -234,45 +239,13 @@ class FrameStack:
         stacked_state = np.stack(self.stack, axis=2)
         return stacked_state
 
-
-# Replay Buffer
-class SimpleReplayBuffer:
-    def __init__(self, max_size=1000):
-        self.buffer = deque(maxlen=max_size)
-
-    def add(self, experience):
-        self.buffer.append(experience)
-
-    def sample_batch(self, batch_size):
-        buffer_size = len(self.buffer)
-        indices = np.random.choice(
-            np.arange(buffer_size), size=batch_size, replace=False
-        )
-        size = len(indices)
-        states = np.zeros([size, 210, 160, 4], dtype=np.float32)
-        next_states = np.zeros([size, 210, 160, 4], dtype=np.float32)
-        actions = np.zeros(size, dtype=np.float32)
-        rewards = np.zeros(size, dtype=np.float32)
-        dones = np.zeros(size, dtype=np.float32)
-
-        for i, idx in enumerate(indices):
-            state, action, reward, next_state, done = self.buffer[idx]
-            states[i] = state
-            next_states[i] = next_state
-            actions[i] = action
-            rewards[i] = reward
-            dones[i] = done
-
-        return dict(s=states, s2=next_states, a=actions, r=rewards, d=dones)
-
-    def store(self, state, action, reward, next_state, done):
-        self.add((state, action, reward, next_state, done))
-
-    def number_of_samples(self):
-        return len(self.buffer)
-
-
-replay_buffer = SimpleReplayBuffer(max_size=MAXIMAL_SAMPLES)
+replay_buffer = StackedFrameReplayBuffer(
+    frame_height=FRAME_HEIGHT,
+    frame_width=FRAME_WIDTH,
+    stack_size=STACK_SIZE,
+    action_dim=1,
+    max_size=MAXIMAL_SAMPLES
+)
 
 # Play
 def sample_action(env, state, epsilon):
@@ -299,7 +272,7 @@ def play_once(env, epsilon, render=False):
         frame_stack.append(frame)
         next_state = frame_stack.get_state()
 
-        replay_buffer.store(state, action, reward, next_state, done)
+        replay_buffer.store(frame, action, reward, done)
 
         steps += 1
         total_return += reward
@@ -326,15 +299,13 @@ def train(steps):
 
 # main loop
 returns = []
-
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=True)
     print("Episode:", n, "Return:", total_return, "Step:", steps)
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
-        loss = train(steps)
-        print("Trained for %d steps, mean q loss %f" % (steps, loss))
+        train(steps)
     if n != 0 and n % 10 == 0:
         print(
             "Episode:",
@@ -354,7 +325,6 @@ for n in range(DEMO_NUMBER):
 env.close()
 
 # Report
-
 plt.figure()
 plt.plot(returns)
 plt.title("Returns")
