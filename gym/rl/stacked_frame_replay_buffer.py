@@ -3,9 +3,8 @@ import numpy as np
 class StackedFrameReplayBuffer:
     def __init__(
         self,
-        frame_width,
         frame_height,
-        channels,
+        frame_width,
         stack_size,
         action_dim,
         max_size = 10000
@@ -14,8 +13,8 @@ class StackedFrameReplayBuffer:
         self.size = 0
         self.stack_size = stack_size
         self.max_size = max_size
-        self.observations = np.zeros(
-            [max_size, frame_width, frame_height, channels], dtype=np.float32
+        self.frames = np.zeros(
+            [max_size, frame_height, frame_width], dtype=np.float32
         )
         self.actions = np.zeros(
             [max_size, action_dim], dtype=np.float32
@@ -24,13 +23,12 @@ class StackedFrameReplayBuffer:
         self.dones = np.zeros(max_size, dtype=np.float32)
         self.frame_width = frame_width
         self.frame_height = frame_height
-        self.channels = channels
 
     def number_of_samples(self):
         return self.size
 
-    def store(self, observation, action, reward, done):
-        self.observations[self.current] = observation
+    def store(self, frame, action, reward, done):
+        self.frames[self.current] = frame
         self.actions[self.current] = action
         self.rewards[self.current] = reward
         self.dones[self.current] = done
@@ -47,8 +45,8 @@ class StackedFrameReplayBuffer:
                     self.stack_size, self.stack_size - 1
                 )
             )
-        state = self.observations[index - self.stack_size + 1:index + 1, ...]
-        return np.concatenate(state, axis=2)
+        state = self.frames[index - self.stack_size + 1:index + 1, ...]
+        return np.stack(state, axis=2)
 
     def get_valid_indices(self, batch_size):
         indices = np.zeros(batch_size, dtype=int)
@@ -82,11 +80,10 @@ class StackedFrameReplayBuffer:
             batch_size,
             self.frame_width,
             self.frame_height,
-            self.channels * self.stack_size
+            self.stack_size
         )
         previous_states = np.zeros(shape=states_shape, dtype=np.float32)
         states = np.zeros(shape=states_shape, dtype=np.float32)
-
 
         for i, index in enumerate(indices):
             previous_states[i, ...] = self.get_state(index - 1)
