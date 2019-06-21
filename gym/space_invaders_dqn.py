@@ -330,7 +330,7 @@ returns = []
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=True)
-    print("Episode:", n, "Return:", total_return)
+    print("Episode:", n, "Return:", total_return, "Step:", steps)
     returns.append(total_return)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         loss = train(steps)
