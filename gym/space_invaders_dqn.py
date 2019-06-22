@@ -30,7 +30,7 @@ BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
 MINIMAL_SAMPLES = 1000
-MAXIMAL_SAMPLES = 100000
+MAXIMAL_SAMPLES = 10000
 ITERATIONS = 20000
 DEMO_NUMBER = 10
 
@@ -284,7 +284,7 @@ def train(steps):
         }
         s, _ = session.run([merged_summary, train_op], feed_dict)
         target_q_layer.update_from(q_layer, decay=DECAY, session=session)
-        writer.add_summary(s, n)
+        return s
 
 
 # main loop
@@ -292,13 +292,18 @@ returns = []
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=True)
+    s = tf.Summary(
+        value=[tf.Summary.Value(tag="Return", simple_value=total_return)]
+    )
+    writer.add_summary(s, n)
     print("Episode:", n, "Return:", total_return, "Step:", steps)
     returns.append(total_return)
 
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         t0 = datetime.now()
         train_steps = int(replay_buffer.number_of_samples() / BATCH_SIZE)
-        train(train_steps)
+        summary = train(train_steps)
+        writer.add_summary(summary, n)
         print("Trained steps:", train_steps, "Duration:", datetime.now() - t0)
 
     if n != 0 and n % 10 == 0:
