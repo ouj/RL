@@ -1,11 +1,8 @@
 #!/usr/bin/env python3.7
 import os
 import sys
-from collections import deque
 from datetime import datetime
-
 import gym
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from rl.helpers import atleast_4d, set_random_seed
@@ -138,7 +135,7 @@ class QLayer(tf.layers.Layer):
             [
                 tf.assign(v_tgt, v_src)
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ],
+            ]
         )
         return copy_op
 
@@ -149,7 +146,7 @@ class QLayer(tf.layers.Layer):
             [
                 tf.assign(v_tgt, decay * v_tgt + (1 - decay) * v_src)
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ],
+            ]
         )
         return update_op
 
@@ -161,7 +158,7 @@ class QLayer(tf.layers.Layer):
             [
                 tf.reduce_all(tf.equal(v_tgt, v_src))
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ],
+            ]
         )
         return equal_op
 
@@ -222,11 +219,9 @@ with tf.name_scope("copy_op"):
 with tf.name_scope("update_op"):
     update_op = target_q_layer.update_from(q_layer, decay=DECAY)
 
-with tf.name_scope("init_op"):
-    init_op = tf.global_variables_initializer()
-
 # Initialize Session and Run copy ops
 session = tf.Session()
+init_op = tf.global_variables_initializer()
 session.run(init_op)
 session.run(copy_op)
 
@@ -249,10 +244,11 @@ class FrameStack:
         self.stack = np.stack([initial_frame] * 4, axis=2)
 
     def append(self, frame):
-        np.append(self.stack[:,:,1:], np.expand_dims(frame, 2), axis=2)
+        np.append(self.stack[:, :, 1:], np.expand_dims(frame, 2), axis=2)
 
     def get_state(self):
         return self.stack
+
 
 replay_buffer = StackedFrameReplayBuffer(
     frame_height=FRAME_HEIGHT,
@@ -328,9 +324,7 @@ for n in range(ITERATIONS):
         value=[
             tf.Summary.Value(tag="Return", simple_value=total_return),
             tf.Summary.Value(tag="Steps", simple_value=steps),
-            tf.Summary.Value(
-                tag="Duration", simple_value=delta.total_seconds()
-            ),
+            tf.Summary.Value(tag="Duration", simple_value=delta.total_seconds()),
             tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
         ]
     )
@@ -338,15 +332,20 @@ for n in range(ITERATIONS):
     writer.add_summary(train_summary, n)
 
     print(
-        "Episode:", n,
-        "Return:", total_return,
-        "Step:", steps,
-        "Duration:", delta.total_seconds(),
-        "Epsilon", epsilon,
+        "Episode:",
+        n,
+        "Return:",
+        total_return,
+        "Step:",
+        steps,
+        "Duration:",
+        delta.total_seconds(),
+        "Epsilon",
+        epsilon,
     )
     if n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(session, CHECKPOINT_FILE, global_step=n)
-        print ("Saved checkpoint to", path)
+        print("Saved checkpoint to", path)
     epsilon -= EPSILON_STEP
 
 # Demo
@@ -355,9 +354,3 @@ for n in range(DEMO_NUMBER):
 
 # Close Environment
 env.close()
-
-# Report
-plt.figure()
-plt.plot(returns)
-plt.title("Returns")
-plt.savefig(os.path.join(monitor_dir, "returns.pdf"))
