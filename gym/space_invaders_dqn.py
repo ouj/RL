@@ -27,13 +27,13 @@ BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
 MINIMAL_SAMPLES = 1000
-MAXIMAL_SAMPLES = 100000
+MAXIMAL_SAMPLES = 50000
 ITERATIONS = 2000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
 FRAME_HEIGHT = 170
-STACK_SIZE = 4
+STACK_SIZE = 8
 
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
@@ -241,7 +241,7 @@ writer.add_graph(session.graph)
 # Frame Stack
 class FrameStack:
     def __init__(self, initial_frame, stack_size=STACK_SIZE):
-        self.stack = np.stack([initial_frame] * 4, axis=2)
+        self.stack = np.stack([initial_frame] * STACK_SIZE, axis=2)
 
     def append(self, frame):
         np.append(self.stack[:, :, 1:], np.expand_dims(frame, 2), axis=2)
