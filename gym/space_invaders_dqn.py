@@ -17,7 +17,8 @@ set_random_seed(0)
 
 # Path and folders
 FILENAME = "space_invadors_dpn"
-MONITOR_DIR = os.path.join("output", FILENAME, "video")
+TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
+MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
 LOGGING_DIR = os.path.join("output", FILENAME, "log")
 CHECKPOINT_FILE = os.path.join("output", FILENAME, "checkpoints", "model")
 
