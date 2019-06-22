@@ -20,9 +20,9 @@ set_random_seed(0)
 
 # Path and folders
 FILENAME = "space_invadors_dpn"
-TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
-MONITOR_DIR = os.path.join("video", FILENAME + "_" + TS)
-LOGGING_DIR = os.path.join("log", FILENAME)
+MONITOR_DIR = os.path.join("output", FILENAME, "video")
+LOGGING_DIR = os.path.join("output", FILENAME, "log")
+CHECKPOINT_FILE = os.path.join("output", FILENAME, "checkpoints", "model")
 
 # Hyperparameters
 LEARNING_RATE = 0.001
@@ -41,6 +41,9 @@ STACK_SIZE = 4
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
 EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / (ITERATIONS / 2)
+
+RENDER_EVERY = 10
+SAVE_CHECKPOINT_EVERY = 50
 
 real_env = gym.make("SpaceInvaders-v4")
 env = EpisodicLifeEnv(real_env)
@@ -175,6 +178,8 @@ class QLayer(tf.layers.Layer):
 
 tf.reset_default_graph()
 
+image_preprocessor = ImagePreprocessor()
+
 # Inputs
 X = tf.placeholder(
     shape=(None, FRAME_HEIGHT, FRAME_WIDTH, STACK_SIZE), dtype=tf.float32, name="x"
@@ -198,6 +203,7 @@ target_q_layer = QLayer(output_dim=env.action_space.n, trainable=False)
 Q = q_layer(Z)
 Q2 = target_q_layer(Z2)
 
+# Create ops
 with tf.name_scope("predict_op"):
     predict_op = tf.squeeze(tf.argmax(Q, axis=1))
 
@@ -216,12 +222,16 @@ with tf.name_scope("copy_op"):
 with tf.name_scope("update_op"):
     update_op = target_q_layer.update_from(q_layer, decay=DECAY)
 
-image_preprocessor = ImagePreprocessor()
+with tf.name_scope("init_op"):
+    init_op = tf.global_variables_initializer()
 
 # Initialize Session and Run copy ops
 session = tf.Session()
-session.run(tf.global_variables_initializer())
+session.run(init_op)
 session.run(copy_op)
+
+# Saver
+saver = tf.train.Saver(max_to_keep=10, keep_checkpoint_every_n_hours=1)
 
 # Setup Summary
 tf.summary.scalar("QLoss", q_loss)
@@ -243,7 +253,6 @@ class FrameStack:
 
     def get_state(self):
         return self.stack
-
 
 replay_buffer = StackedFrameReplayBuffer(
     frame_height=FRAME_HEIGHT,
@@ -308,35 +317,36 @@ def train(steps):
 # main loop
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
-    milestone = (n % 10 == 0)
-    steps, total_return = play_once(env, epsilon, render=milestone)
-    if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
-        t0 = datetime.now()
-        train_steps = int(replay_buffer.number_of_samples() / BATCH_SIZE)
-        train_summary = train(train_steps)
-        delta = datetime.now() - t0
-        play_summary = tf.Summary(
-            value=[
-                tf.Summary.Value(tag="Return", simple_value=total_return),
-                tf.Summary.Value(tag="Steps", simple_value=steps),
-                tf.Summary.Value(tag="Trained", simple_value=train_steps),
-                tf.Summary.Value(
-                    tag="Duration", simple_value=delta.total_seconds()
-                ),
-                tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
-            ]
-        )
-        writer.add_summary(play_summary, n)
-        writer.add_summary(train_summary, n)
+    steps, total_return = play_once(env, epsilon, render=(n % RENDER_EVERY == 0))
+    if MINIMAL_SAMPLES > replay_buffer.number_of_samples():
+        continue
 
-        print(
-            "Episode:", n,
-            "Return:", total_return,
-            "Step:", steps,
-            "Trained steps:", train_steps,
-            "Duration:", delta.total_seconds(),
-            "Epsilon", epsilon,
-        )
+    t0 = datetime.now()
+    train_summary = train(steps)
+    delta = datetime.now() - t0
+    play_summary = tf.Summary(
+        value=[
+            tf.Summary.Value(tag="Return", simple_value=total_return),
+            tf.Summary.Value(tag="Steps", simple_value=steps),
+            tf.Summary.Value(
+                tag="Duration", simple_value=delta.total_seconds()
+            ),
+            tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
+        ]
+    )
+    writer.add_summary(play_summary, n)
+    writer.add_summary(train_summary, n)
+
+    print(
+        "Episode:", n,
+        "Return:", total_return,
+        "Step:", steps,
+        "Duration:", delta.total_seconds(),
+        "Epsilon", epsilon,
+    )
+    if n % SAVE_CHECKPOINT_EVERY == 0:
+        path = saver.save(session, "model", global_step=n)
+        print ("Saved checkpoint to", path)
     epsilon -= EPSILON_STEP
 
 # Demo
