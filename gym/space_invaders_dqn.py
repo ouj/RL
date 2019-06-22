@@ -63,7 +63,7 @@ class ImagePreprocessor:
 
 # Layer Definitions
 class ConvLayer(tf.layers.Layer):
-    def __init__(self, activation=tf.nn.elu):
+    def __init__(self, activation=tf.nn.relu):
         super(ConvLayer, self).__init__()
         self.conv1 = tf.layers.Conv2D(
             filters=32,
@@ -100,14 +100,16 @@ class ConvLayer(tf.layers.Layer):
             variables += layer.variables
         return variables
 
+    def setup_tensorboard(self):
+        variables = self.collect_variables()
+        for v in variables:
+            tf.summary.histogram(v.name, v)
+
     def call(self, inputs):
         x = self.conv1(inputs)
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.flatten(x)
-        variables = self.collect_variables()
-        for v in variables:
-            tf.summary.histogram(v.name, v)
         return x
 
 
@@ -125,7 +127,7 @@ class QLayer(tf.layers.Layer):
             variables += layer.variables
         return variables
 
-    def copy_from(self, other_qlayer, session=None):
+    def copy_from(self, other_qlayer):
         assert isinstance(other_qlayer, QLayer)
         target_variables = self.collect_variables()
         source_variables = other_qlayer.collect_variables()
@@ -133,22 +135,20 @@ class QLayer(tf.layers.Layer):
             [
                 tf.assign(v_tgt, v_src)
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ]
+            ],
         )
-        session = session if session is not None else tf.get_default_session()
-        session.run(copy_op)
+        return copy_op
 
-    def update_from(self, other_qlayer, decay, session=None):
+    def update_from(self, other_qlayer, decay):
         target_variables = self.collect_variables()
         source_variables = other_qlayer.collect_variables()
         update_op = tf.group(
             [
                 tf.assign(v_tgt, decay * v_tgt + (1 - decay) * v_src)
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ]
+            ],
         )
-        session = session if session is not None else tf.get_default_session()
-        session.run(update_op)
+        return update_op
 
     def is_equal(self, other_qlayer, session=None):
         assert isinstance(other_qlayer, QLayer)
@@ -158,29 +158,19 @@ class QLayer(tf.layers.Layer):
             [
                 tf.reduce_all(tf.equal(v_tgt, v_src))
                 for v_tgt, v_src in zip(target_variables, source_variables)
-            ]
+            ],
         )
-        session = session if session is not None else tf.get_default_session()
-        return session.run(equal_op)
+        return equal_op
+
+    def setup_tensorboard(self):
+        variables = self.collect_variables()
+        for v in variables:
+            tf.summary.histogram(v.name, v)
 
     def call(self, inputs):
         x = self.W(inputs)
         x = self.Q(x)
-        variables = self.collect_variables()
-        for v in variables:
-            tf.summary.histogram(v.name, v)
         return x
-
-
-
-def compute_Q_loss(Q, Q2, R, D, A):
-    selected_Q = tf.reduce_sum(
-        Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
-    )
-    next_Q = tf.math.reduce_max(Q2, axis=1)
-    G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
-    q_loss = tf.reduce_sum(tf.square(selected_Q - G))
-    return q_loss
 
 
 tf.reset_default_graph()
@@ -203,26 +193,45 @@ Z2 = conv_layer(X2)
 
 # Deep Q Network
 q_layer = QLayer(output_dim=env.action_space.n, trainable=True)
-Q = q_layer(Z)
-predict_op = tf.squeeze(tf.argmax(Q, axis=1))
-
 target_q_layer = QLayer(output_dim=env.action_space.n, trainable=False)
+
+Q = q_layer(Z)
 Q2 = target_q_layer(Z2)
 
-q_loss = compute_Q_loss(Q, Q2, R, D, A)
-tf.summary.scalar("QLoss", q_loss)
-train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
+with tf.name_scope("predict_op"):
+    predict_op = tf.squeeze(tf.argmax(Q, axis=1))
+
+with tf.name_scope("train_op"):
+    selected_Q = tf.reduce_sum(
+        Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
+    )
+    next_Q = tf.math.reduce_max(Q2, axis=1)
+    G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
+    q_loss = tf.reduce_sum(tf.square(selected_Q - G))
+    train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
+
+with tf.name_scope("copy_op"):
+    copy_op = target_q_layer.copy_from(q_layer)
+
+with tf.name_scope("update_op"):
+    update_op = target_q_layer.update_from(q_layer, decay=DECAY)
 
 image_preprocessor = ImagePreprocessor()
 
+# Initialize Session and Run copy ops
 session = tf.Session()
-
 session.run(tf.global_variables_initializer())
-target_q_layer.copy_from(q_layer, session=session)
+session.run(copy_op)
 
+# Setup Summary
+tf.summary.scalar("QLoss", q_loss)
+conv_layer.setup_tensorboard()
+q_layer.setup_tensorboard()
+target_q_layer.setup_tensorboard()
 merged_summary = tf.summary.merge_all()
 writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
+
 
 # Frame Stack
 class FrameStack:
@@ -291,15 +300,15 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        session.run(train_op, feed_dict)
-        target_q_layer.update_from(q_layer, decay=DECAY, session=session)
+        session.run(train_op, feed_dict=feed_dict)
+        session.run(update_op)
     return session.run(merged_summary, feed_dict)
 
 
 # main loop
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
-    milestone = (n % 100 == 0)
+    milestone = (n % 10 == 0)
     steps, total_return = play_once(env, epsilon, render=milestone)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         t0 = datetime.now()
@@ -328,7 +337,6 @@ for n in range(ITERATIONS):
             "Duration:", delta.total_seconds(),
             "Epsilon", epsilon,
         )
-
     epsilon -= EPSILON_STEP
 
 # Demo
