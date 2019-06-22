@@ -40,7 +40,7 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
-EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / 500000
+EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / 5000
 
 real_env = gym.make("SpaceInvaders-v4")
 env = EpisodicLifeEnv(real_env)
@@ -316,9 +316,10 @@ for n in range(ITERATIONS):
             "Return:", total_return,
             "Step:", steps,
             "Trained steps:", train_steps,
-            "Duration:", delta.total_seconds()
+            "Duration:", delta.total_seconds(),
+            "Epsilon", epsilon,
         )
-        
+
     epsilon -= EPSILON_STEP
 
 # Demo
