@@ -30,8 +30,8 @@ BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.99
 MINIMAL_SAMPLES = 1000
-MAXIMAL_SAMPLES = 10000
-ITERATIONS = 10000
+MAXIMAL_SAMPLES = 100000
+ITERATIONS = 2000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
@@ -345,7 +345,7 @@ for n in range(ITERATIONS):
         "Epsilon", epsilon,
     )
     if n % SAVE_CHECKPOINT_EVERY == 0:
-        path = saver.save(session, "model", global_step=n)
+        path = saver.save(session, CHECKPOINT_FILE, global_step=n)
         print ("Saved checkpoint to", path)
     epsilon -= EPSILON_STEP
 
