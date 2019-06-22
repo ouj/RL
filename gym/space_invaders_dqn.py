@@ -288,33 +288,37 @@ def train(steps):
 
 
 # main loop
-returns = []
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=True)
-    s = tf.Summary(
-        value=[tf.Summary.Value(tag="Return", simple_value=total_return)]
-    )
-    writer.add_summary(s, n)
-    print("Episode:", n, "Return:", total_return, "Step:", steps)
-    returns.append(total_return)
 
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         t0 = datetime.now()
         train_steps = int(replay_buffer.number_of_samples() / BATCH_SIZE)
-        summary = train(train_steps)
-        writer.add_summary(summary, n)
-        print("Trained steps:", train_steps, "Duration:", datetime.now() - t0)
-
-    if n != 0 and n % 10 == 0:
-        print(
-            "Episode:",
-            n,
-            "Average Returns:",
-            np.mean(returns[n - 10 :]),
-            "epsilon:",
-            epsilon,
+        train_summary = train(train_steps)
+        delta = datetime.now() - t0
+        play_summary = tf.Summary(
+            value=[
+                tf.Summary.Value(tag="Return", simple_value=total_return),
+                tf.Summary.Value(tag="Steps", simple_value=steps),
+                tf.Summary.Value(tag="Trained", simple_value=train_steps),
+                tf.Summary.Value(
+                    tag="Duration", simple_value=delta.total_seconds()
+                ),
+                tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
+            ]
         )
+        writer.add_summary(play_summary, n)
+        writer.add_summary(train_summary, n)
+
+        print(
+            "Episode:", n,
+            "Return:", total_return,
+            "Step:", steps,
+            "Trained steps:", train_steps,
+            "Duration:", delta.total_seconds()
+        )
+        
     epsilon -= EPSILON_STEP
 
 # Demo
