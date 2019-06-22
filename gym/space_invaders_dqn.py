@@ -31,7 +31,7 @@ GAMMA = 0.99
 DECAY = 0.99
 MINIMAL_SAMPLES = 1000
 MAXIMAL_SAMPLES = 10000
-ITERATIONS = 20000
+ITERATIONS = 10000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
@@ -40,7 +40,7 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
-EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / 5000
+EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / (ITERATIONS / 2)
 
 real_env = gym.make("SpaceInvaders-v4")
 env = EpisodicLifeEnv(real_env)
@@ -94,18 +94,26 @@ class ConvLayer(tf.layers.Layer):
         )
         self.flatten = tf.layers.Flatten(name="flatten")
 
+    def collect_variables(self):
+        variables = []
+        for layer in [self.conv1, self.conv2, self.conv3]:
+            variables += layer.variables
+        return variables
+
     def call(self, inputs):
-        with tf.variable_scope("conv"):
-            x = self.conv1(inputs)
-            x = self.conv2(x)
-            x = self.conv3(x)
-            return self.flatten(x)
+        x = self.conv1(inputs)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.flatten(x)
+        variables = self.collect_variables()
+        for v in variables:
+            tf.summary.histogram(v.name, v)
+        return x
 
 
 class QLayer(tf.layers.Layer):
-    def __init__(self, output_dim, scope, activation=tf.nn.relu, trainable=True):
+    def __init__(self, output_dim, activation=tf.nn.relu, trainable=True):
         super(QLayer, self).__init__()
-        self.scope = scope
         self.W = tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W"
         )
@@ -156,9 +164,13 @@ class QLayer(tf.layers.Layer):
         return session.run(equal_op)
 
     def call(self, inputs):
-        with tf.variable_scope(self.scope):
-            x = self.W(inputs)
-            return self.Q(x)
+        x = self.W(inputs)
+        x = self.Q(x)
+        variables = self.collect_variables()
+        for v in variables:
+            tf.summary.histogram(v.name, v)
+        return x
+
 
 
 def compute_Q_loss(Q, Q2, R, D, A):
@@ -190,11 +202,11 @@ Z = conv_layer(X)
 Z2 = conv_layer(X2)
 
 # Deep Q Network
-q_layer = QLayer(output_dim=env.action_space.n, scope="main", trainable=True)
+q_layer = QLayer(output_dim=env.action_space.n, trainable=True)
 Q = q_layer(Z)
 predict_op = tf.squeeze(tf.argmax(Q, axis=1))
 
-target_q_layer = QLayer(output_dim=env.action_space.n, scope="target", trainable=False)
+target_q_layer = QLayer(output_dim=env.action_space.n, trainable=False)
 Q2 = target_q_layer(Z2)
 
 q_loss = compute_Q_loss(Q, Q2, R, D, A)
@@ -215,16 +227,13 @@ writer.add_graph(session.graph)
 # Frame Stack
 class FrameStack:
     def __init__(self, initial_frame, stack_size=STACK_SIZE):
-        self.stack = deque(maxlen=stack_size)
-        for _ in range(stack_size):
-            self.stack.append(initial_frame)
+        self.stack = np.stack([initial_frame] * 4, axis=2)
 
     def append(self, frame):
-        self.stack.append(frame)
+        np.append(self.stack[:,:,1:], np.expand_dims(frame, 2), axis=2)
 
     def get_state(self):
-        stacked_state = np.stack(self.stack, axis=2)
-        return stacked_state
+        return self.stack
 
 
 replay_buffer = StackedFrameReplayBuffer(
@@ -282,16 +291,16 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        s, _ = session.run([merged_summary, train_op], feed_dict)
+        session.run(train_op, feed_dict)
         target_q_layer.update_from(q_layer, decay=DECAY, session=session)
-        return s
+    return session.run(merged_summary, feed_dict)
 
 
 # main loop
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
-    steps, total_return = play_once(env, epsilon, render=True)
-
+    milestone = (n % 100 == 0)
+    steps, total_return = play_once(env, epsilon, render=milestone)
     if MINIMAL_SAMPLES < replay_buffer.number_of_samples():
         t0 = datetime.now()
         train_steps = int(replay_buffer.number_of_samples() / BATCH_SIZE)
