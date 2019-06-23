@@ -23,28 +23,28 @@ LOGGING_DIR = os.path.join("output", FILENAME, "log")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-LEARNING_RATE = 0.001
+LEARNING_RATE = 1e-5
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.995
 MINIMAL_SAMPLES = 10000
-MAXIMAL_SAMPLES = 50000
+MAXIMAL_SAMPLES = 40000
 ITERATIONS = 5000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
-FRAME_HEIGHT = 180
-STACK_SIZE = 8
+FRAME_HEIGHT = 190
+STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_DECAY = 0.99
+EPSILON_DECAY = 0.9999
 
-RENDER_EVERY = 10
 SAVE_CHECKPOINT_EVERY = 50
+DEMO_EVERY=25
 
-env = EpisodicLifeEnv(gym.make("SpaceInvadersNoFrameskip-v4"))
-test_env = gym.wrappers.Monitor(gym.make("SpaceInvadersNoFrameskip-v4"), MONITOR_DIR)
+env = EpisodicLifeEnv(gym.make("SpaceInvadersDeterministic-v4"))
+test_env = gym.wrappers.Monitor(gym.make("SpaceInvadersDeterministic-v4"), MONITOR_DIR)
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -53,7 +53,7 @@ class ImagePreprocessor:
             self.input = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
             t = tf.image.convert_image_dtype(self.input, dtype=tf.float32)
             t = tf.image.rgb_to_grayscale(t)
-            t = tf.image.crop_to_bounding_box(t, 20, 5, 180, 150)
+            t = tf.image.crop_to_bounding_box(t, 10, 5, 190, 150)
             self.output = tf.squeeze(t)
 
     def transform(self, frame, session=None):
@@ -83,20 +83,11 @@ class ConvLayer(tf.layers.Layer):
             kernel_initializer=tf.initializers.glorot_normal,
             name="conv2",
         )
-        self.conv3 = tf.layers.Conv2D(
-            filters=64,
-            kernel_size=3,
-            strides=2,
-            padding="valid",
-            activation=activation,
-            kernel_initializer=tf.initializers.glorot_normal,
-            name="conv3",
-        )
         self.flatten = tf.layers.Flatten(name="flatten")
 
     def collect_variables(self):
         variables = []
-        for layer in [self.conv1, self.conv2, self.conv3]:
+        for layer in [self.conv1, self.conv2]:
             variables += layer.variables
         return variables
 
@@ -108,7 +99,6 @@ class ConvLayer(tf.layers.Layer):
     def call(self, inputs):
         x = self.conv1(inputs)
         x = self.conv2(x)
-        x = self.conv3(x)
         x = self.flatten(x)
         return x
 
@@ -211,9 +201,16 @@ with tf.name_scope("train_op"):
     selected_Q = tf.reduce_sum(
         Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
     )
+    tf.summary.histogram("SelectedQ", selected_Q)
+    tf.summary.scalar("AvgSelectedQ", tf.reduce_mean(selected_Q))
     next_Q = tf.math.reduce_max(Q2, axis=1)
+    tf.summary.histogram("NextQ", next_Q)
+    tf.summary.scalar("AvgNextQ", tf.reduce_mean(next_Q))
     G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
-    q_loss = tf.reduce_sum(tf.square(selected_Q - G))
+    tf.summary.histogram("G", G)
+    tf.summary.scalar("AvgG", tf.reduce_mean(G))
+    # https://openai.com/blog/openai-baselines-dqn/ suggest huber_loss
+    q_loss = tf.reduce_sum(tf.losses.huber_loss(selected_Q, G))
     tf.summary.scalar("QLoss", q_loss)
     train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
 
@@ -332,7 +329,7 @@ sampled_states = replay_buffer.sample_batch()["s"]
 print("Start Main Loop...")
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
-    steps, total_return = play_once(env, epsilon, render=(n % RENDER_EVERY == 0))
+    steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
     train_summary = train(steps)
     delta = datetime.now() - t0
@@ -368,6 +365,10 @@ for n in range(ITERATIONS):
             session, os.path.join(CHECKPOINT_DIR, "model"), global_step=n
         )
         print("Saved checkpoint to", path)
+
+    if n % DEMO_EVERY == 0:
+        steps, total_return = play_once(test_env, 0.05, render=True)
+        print("Demo for %d steps, Return %d" % (steps, total_return))
 
     epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
 
