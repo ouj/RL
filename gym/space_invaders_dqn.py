@@ -20,7 +20,7 @@ FILENAME = "space_invadors_dpn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
 LOGGING_DIR = os.path.join("output", FILENAME, "log")
-CHECKPOINT_FILE = os.path.join("output", FILENAME, "checkpoints", "model")
+CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
 LEARNING_RATE = 0.001
@@ -38,7 +38,7 @@ STACK_SIZE = 8
 
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
-EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / (ITERATIONS / 2)
+EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / ITERATIONS
 
 RENDER_EVERY = 10
 SAVE_CHECKPOINT_EVERY = 50
@@ -201,6 +201,9 @@ target_q_layer = QLayer(output_dim=env.action_space.n, trainable=False)
 Q = q_layer(Z)
 Q2 = target_q_layer(Z2)
 
+with tf.name_scope("q_max"):
+    q_avg_max = tf.reduce_mean(tf.reduce_max(Q, axis=1))
+
 # Create ops
 with tf.name_scope("predict_op"):
     predict_op = tf.squeeze(tf.argmax(Q, axis=1))
@@ -212,6 +215,7 @@ with tf.name_scope("train_op"):
     next_Q = tf.math.reduce_max(Q2, axis=1)
     G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
     q_loss = tf.reduce_sum(tf.square(selected_Q - G))
+    tf.summary.scalar("QLoss", q_loss)
     train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
 
 with tf.name_scope("copy_op"):
@@ -226,17 +230,22 @@ init_op = tf.global_variables_initializer()
 session.run(init_op)
 session.run(copy_op)
 
-# Saver
-saver = tf.train.Saver(max_to_keep=10, keep_checkpoint_every_n_hours=1)
-
 # Setup Summary
-tf.summary.scalar("QLoss", q_loss)
 conv_layer.setup_tensorboard()
 q_layer.setup_tensorboard()
 target_q_layer.setup_tensorboard()
-merged_summary = tf.summary.merge_all()
+summary_op = tf.summary.merge_all()
+
+# This is computed using a different op
+q_max_summary_op = tf.summary.scalar("QMax", q_avg_max)
+
 writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
+
+# Saver
+saver = tf.train.Saver(max_to_keep=10, keep_checkpoint_every_n_hours=1)
+last_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
+saver.restore(session, last_checkpoint)
 
 
 # Frame Stack
@@ -284,7 +293,6 @@ def play_once(env, epsilon, render=False):
 
         frame = image_preprocessor.transform(observation, session)
         frame_stack.append(frame)
-        next_state = frame_stack.get_state()
 
         replay_buffer.store(frame, action, reward, done)
 
@@ -308,16 +316,21 @@ def train(steps):
         }
         session.run(train_op, feed_dict=feed_dict)
         session.run(update_op)
-    return session.run(merged_summary, feed_dict)
+    return session.run(summary_op, feed_dict)
 
+# Populate replay buffer
+print("Populating replay buffer...")
+while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
+    play_once(env, 0.0, render=False)
 
-# main loop
+# Collect State Samples
+sampled_states = replay_buffer.sample_batch()["s"]
+
+# Main loop
+print("Start Main Loop...")
 epsilon = EPSILON_MAX
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon, render=(n % RENDER_EVERY == 0))
-    if MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-        continue
-
     t0 = datetime.now()
     train_summary = train(steps)
     delta = datetime.now() - t0
@@ -329,8 +342,12 @@ for n in range(ITERATIONS):
             tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
         ]
     )
+    q_summary = session.run(q_max_summary_op, feed_dict={
+        X: atleast_4d(sampled_states)
+    })
     writer.add_summary(play_summary, n)
     writer.add_summary(train_summary, n)
+    writer.add_summary(q_summary, n)
 
     print(
         "Episode:",
@@ -345,9 +362,9 @@ for n in range(ITERATIONS):
         epsilon,
     )
     if n % SAVE_CHECKPOINT_EVERY == 0:
-        path = saver.save(session, CHECKPOINT_FILE, global_step=n)
+        path = saver.save(session, os.path.join(CHECKPOINT_DIR, "model"))
         print("Saved checkpoint to", path)
-    epsilon -= EPSILON_STEP
+    epsilon = max(EPSILON_MIN, epsilon - EPSILON_STEP)
 
 # Demo
 for n in range(DEMO_NUMBER):
