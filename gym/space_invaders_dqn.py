@@ -33,7 +33,7 @@ ITERATIONS = 5000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
-FRAME_HEIGHT = 170
+FRAME_HEIGHT = 180
 STACK_SIZE = 8
 
 EPSILON_MAX = 1.00
@@ -53,7 +53,7 @@ class ImagePreprocessor:
             self.input = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
             t = tf.image.convert_image_dtype(self.input, dtype=tf.float32)
             t = tf.image.rgb_to_grayscale(t)
-            t = tf.image.crop_to_bounding_box(t, 20, 5, 170, 150)
+            t = tf.image.crop_to_bounding_box(t, 20, 5, 180, 150)
             self.output = tf.squeeze(t)
 
     def transform(self, frame, session=None):
