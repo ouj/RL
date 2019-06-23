@@ -319,13 +319,20 @@ def train(steps):
 def demo():
     demo_env = gym.wrappers.Monitor(
         gym.make(env_name),
-        MONITOR_DIR, 
+        MONITOR_DIR,
         resume=True,
         mode="evaluation",
         write_upon_reset=True
     )
     steps, total_return = play_once(demo_env, 0.05, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
+    demo_summary = tf.Summary(
+        value=[
+            tf.Summary.Value(tag="Return", simple_value=total_return),
+            tf.Summary.Value(tag="Steps", simple_value=steps),
+        ]
+    )
+    writer.add_summary(demo_summary)
     demo_env.close()
 
 # Populate replay buffer
