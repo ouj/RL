@@ -26,26 +26,25 @@ CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 LEARNING_RATE = 0.001
 BATCH_SIZE = 32
 GAMMA = 0.99
-DECAY = 0.99
-MINIMAL_SAMPLES = 1000
+DECAY = 0.995
+MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 50000
-ITERATIONS = 2000
+ITERATIONS = 5000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
 FRAME_HEIGHT = 170
 STACK_SIZE = 8
 
-EPSILON_MAX = 1.0
+EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_STEP = (EPSILON_MAX - EPSILON_MIN) / ITERATIONS
+EPSILON_DECAY = 0.99
 
 RENDER_EVERY = 10
 SAVE_CHECKPOINT_EVERY = 50
 
-real_env = gym.make("SpaceInvaders-v4")
-env = EpisodicLifeEnv(real_env)
-test_env = gym.wrappers.Monitor(real_env, MONITOR_DIR)
+env = EpisodicLifeEnv(gym.make("SpaceInvaders-v4"))
+test_env = gym.wrappers.Monitor(gym.make("SpaceInvaders-v4"), MONITOR_DIR)
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -243,9 +242,11 @@ writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
 
 # Saver
-saver = tf.train.Saver(max_to_keep=10, keep_checkpoint_every_n_hours=1)
+saver = tf.train.Saver(max_to_keep=10)
 last_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
-saver.restore(session, last_checkpoint)
+if last_checkpoint is not None:
+    saver.restore(session, last_checkpoint)
+    print("Restored last checkpoint", last_checkpoint)
 
 
 # Frame Stack
@@ -321,7 +322,8 @@ def train(steps):
 # Populate replay buffer
 print("Populating replay buffer...")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    play_once(env, 0.0, render=False)
+    steps, total_return = play_once(env, 0.0, render=False)
+    print("Played %d steps" % steps)
 
 # Collect State Samples
 sampled_states = replay_buffer.sample_batch()["s"]
@@ -362,9 +364,12 @@ for n in range(ITERATIONS):
         epsilon,
     )
     if n % SAVE_CHECKPOINT_EVERY == 0:
-        path = saver.save(session, os.path.join(CHECKPOINT_DIR, "model"))
+        path = saver.save(
+            session, os.path.join(CHECKPOINT_DIR, "model"), global_step=n
+        )
         print("Saved checkpoint to", path)
-    epsilon = max(EPSILON_MIN, epsilon - EPSILON_STEP)
+
+    epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
 
 # Demo
 for n in range(DEMO_NUMBER):
