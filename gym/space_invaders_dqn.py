@@ -43,8 +43,8 @@ EPSILON_DECAY = 0.9999
 SAVE_CHECKPOINT_EVERY = 50
 DEMO_EVERY=25
 
-env = EpisodicLifeEnv(gym.make("SpaceInvadersDeterministic-v4"))
-test_env = gym.wrappers.Monitor(gym.make("SpaceInvadersDeterministic-v4"), MONITOR_DIR)
+env_name = "SpaceInvadersDeterministic-v4"
+env = EpisodicLifeEnv(gym.make(env_name))
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -316,6 +316,18 @@ def train(steps):
         session.run(update_op)
     return session.run(summary_op, feed_dict)
 
+def demo():
+    demo_env = gym.wrappers.Monitor(
+        gym.make(env_name),
+        MONITOR_DIR, 
+        resume=True,
+        mode="evaluation",
+        write_upon_reset=True
+    )
+    steps, total_return = play_once(demo_env, 0.05, render=True)
+    print("Demo for %d steps, Return %d" % (steps, total_return))
+    demo_env.close()
+
 # Populate replay buffer
 print("Populating replay buffer...")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
@@ -367,14 +379,8 @@ for n in range(ITERATIONS):
         print("Saved checkpoint to", path)
 
     if n % DEMO_EVERY == 0:
-        steps, total_return = play_once(test_env, 0.05, render=True)
-        print("Demo for %d steps, Return %d" % (steps, total_return))
-
+        demo()
     epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
-
-# Demo
-for n in range(DEMO_NUMBER):
-    play_once(test_env, 0.0, render=True)
 
 # Close Environment
 env.close()
