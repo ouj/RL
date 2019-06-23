@@ -43,8 +43,8 @@ EPSILON_DECAY = 0.99
 RENDER_EVERY = 10
 SAVE_CHECKPOINT_EVERY = 50
 
-env = EpisodicLifeEnv(gym.make("SpaceInvaders-v4"))
-test_env = gym.wrappers.Monitor(gym.make("SpaceInvaders-v4"), MONITOR_DIR)
+env = EpisodicLifeEnv(gym.make("SpaceInvadersNoFrameskip-v4"))
+test_env = gym.wrappers.Monitor(gym.make("SpaceInvadersNoFrameskip-v4"), MONITOR_DIR)
 
 # Image preprocessing
 class ImagePreprocessor:
