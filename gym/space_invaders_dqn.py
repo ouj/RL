@@ -198,6 +198,8 @@ target_q_layer = QLayer(output_dim=env.action_space.n, trainable=False)
 Q = q_layer(Z)
 Q2 = target_q_layer(Z2)
 
+global_step = tf.train.get_or_create_global_step()
+
 with tf.name_scope("q_max"):
     q_avg_max = tf.reduce_mean(tf.reduce_max(Q, axis=1))
 
@@ -216,7 +218,9 @@ with tf.name_scope("train_op"):
     # https://openai.com/blog/openai-baselines-dqn/ suggest huber_loss
     q_loss = tf.reduce_sum(tf.losses.huber_loss(selected_Q, G))
     tf.summary.scalar("QLoss", q_loss)
-    train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(q_loss)
+    train_op = tf.train.AdamOptimizer(
+        learning_rate=LEARNING_RATE
+    ).minimize(q_loss, global_step=global_step)
 
 with tf.name_scope("copy_op"):
     copy_op = target_q_layer.copy_from(q_layer)
@@ -346,17 +350,8 @@ for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
     train_summary = train(steps)
-    writer.add_summary(train_summary, n)
-
     total_steps += steps
     delta = datetime.now() - t0
-    summary = tf.Summary()
-    summary.value.add(tag="train/Return", simple_value=total_return)
-    summary.value.add(tag="train/Steps", simple_value=steps)
-    summary.value.add(tag="train/Duration", simple_value=delta.total_seconds())
-    summary.value.add(tag="train/Epsilon", simple_value=epsilon)
-    writer.add_summary(summary, n)
-
     print(
         "Episode:",
         n,
@@ -371,15 +366,27 @@ for n in range(ITERATIONS):
         "Total Steps:",
         total_steps
     )
+
+    summary = tf.Summary()
+    summary.value.add(tag="train/Return", simple_value=total_return)
+    summary.value.add(tag="train/Steps", simple_value=steps)
+    summary.value.add(tag="train/Duration", simple_value=delta.total_seconds())
+    summary.value.add(tag="train/Epsilon", simple_value=epsilon)
+    global_step_val = tf.train.global_step(session, global_step)
+    writer.add_summary(train_summary, global_step=global_step_val)
+    writer.add_summary(summary, global_step=global_step_val)
+
     if n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(
-            session, os.path.join(CHECKPOINT_DIR, "model"), global_step=n
+            session,
+            os.path.join(CHECKPOINT_DIR, "model"),
+            global_step=global_step_val
         )
         print("Saved checkpoint to", path)
 
     if n % DEMO_EVERY == 0:
         summary = demo()
-        writer.add_summary(summary, n)
+        writer.add_summary(summary, global_step=global_step_val)
 
     epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
 
