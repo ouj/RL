@@ -26,9 +26,9 @@ CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 32
 GAMMA = 0.99
-DECAY = 0.995
+DECAY = 0.999
 MINIMAL_SAMPLES = 10000
-MAXIMAL_SAMPLES = 40000
+MAXIMAL_SAMPLES = 20000
 ITERATIONS = 5000
 DEMO_NUMBER = 10
 
@@ -38,13 +38,21 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_DECAY = 0.9999
+EPSILON_DECAY = 0.9995
 
 SAVE_CHECKPOINT_EVERY = 50
 DEMO_EVERY=25
 
-env_name = "SpaceInvadersDeterministic-v4"
-env = EpisodicLifeEnv(gym.make(env_name))
+
+def make_env():
+    env_name = "SpaceInvadersDeterministic-v4"
+    e = gym.make(env_name)
+    # according to the paper, frameskip 4 will make the lasers
+    # appear to be disapeared.
+    e.frameskip=3
+    return e
+
+env = EpisodicLifeEnv(make_env())
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -201,14 +209,10 @@ with tf.name_scope("train_op"):
     selected_Q = tf.reduce_sum(
         Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
     )
-    tf.summary.histogram("SelectedQ", selected_Q)
-    tf.summary.scalar("AvgSelectedQ", tf.reduce_mean(selected_Q))
     next_Q = tf.math.reduce_max(Q2, axis=1)
-    tf.summary.histogram("NextQ", next_Q)
-    tf.summary.scalar("AvgNextQ", tf.reduce_mean(next_Q))
     G = tf.stop_gradient(R + GAMMA * next_Q * (1 - D))
     tf.summary.histogram("G", G)
-    tf.summary.scalar("AvgG", tf.reduce_mean(G))
+    tf.summary.scalar("G_mean", tf.reduce_mean(G))
     # https://openai.com/blog/openai-baselines-dqn/ suggest huber_loss
     q_loss = tf.reduce_sum(tf.losses.huber_loss(selected_Q, G))
     tf.summary.scalar("QLoss", q_loss)
@@ -231,9 +235,6 @@ conv_layer.setup_tensorboard()
 q_layer.setup_tensorboard()
 target_q_layer.setup_tensorboard()
 summary_op = tf.summary.merge_all()
-
-# This is computed using a different op
-q_max_summary_op = tf.summary.scalar("QMax", q_avg_max)
 
 writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
@@ -312,13 +313,12 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        session.run(train_op, feed_dict=feed_dict)
-        session.run(update_op)
+        session.run([train_op, update_op], feed_dict=feed_dict)
     return session.run(summary_op, feed_dict)
 
 def demo():
     demo_env = gym.wrappers.Monitor(
-        gym.make(env_name),
+        make_env(),
         MONITOR_DIR,
         resume=True,
         mode="evaluation",
@@ -326,14 +326,11 @@ def demo():
     )
     steps, total_return = play_once(demo_env, 0.05, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
-    demo_summary = tf.Summary(
-        value=[
-            tf.Summary.Value(tag="Return", simple_value=total_return),
-            tf.Summary.Value(tag="Steps", simple_value=steps),
-        ]
-    )
-    writer.add_summary(demo_summary)
+    summary = tf.Summary()
+    summary.value.add(tag="demo/Return", simple_value=total_return)
+    summary.value.add(tag="demo/Steps", simple_value=steps)
     demo_env.close()
+    return summary
 
 # Populate replay buffer
 print("Populating replay buffer...")
@@ -341,31 +338,24 @@ while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
     steps, total_return = play_once(env, 0.0, render=False)
     print("Played %d steps" % steps)
 
-# Collect State Samples
-sampled_states = replay_buffer.sample_batch()["s"]
-
 # Main loop
 print("Start Main Loop...")
 epsilon = EPSILON_MAX
+total_steps = 0
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
     train_summary = train(steps)
-    delta = datetime.now() - t0
-    play_summary = tf.Summary(
-        value=[
-            tf.Summary.Value(tag="Return", simple_value=total_return),
-            tf.Summary.Value(tag="Steps", simple_value=steps),
-            tf.Summary.Value(tag="Duration", simple_value=delta.total_seconds()),
-            tf.Summary.Value(tag="Epsilon", simple_value=epsilon),
-        ]
-    )
-    q_summary = session.run(q_max_summary_op, feed_dict={
-        X: atleast_4d(sampled_states)
-    })
-    writer.add_summary(play_summary, n)
     writer.add_summary(train_summary, n)
-    writer.add_summary(q_summary, n)
+
+    total_steps += steps
+    delta = datetime.now() - t0
+    summary = tf.Summary()
+    summary.value.add(tag="train/Return", simple_value=total_return)
+    summary.value.add(tag="train/Steps", simple_value=steps)
+    summary.value.add(tag="train/Duration", simple_value=delta.total_seconds())
+    summary.value.add(tag="train/Epsilon", simple_value=epsilon)
+    writer.add_summary(summary, n)
 
     print(
         "Episode:",
@@ -378,6 +368,8 @@ for n in range(ITERATIONS):
         delta.total_seconds(),
         "Epsilon",
         epsilon,
+        "Total Steps:",
+        total_steps
     )
     if n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(
@@ -386,7 +378,9 @@ for n in range(ITERATIONS):
         print("Saved checkpoint to", path)
 
     if n % DEMO_EVERY == 0:
-        demo()
+        summary = demo()
+        writer.add_summary(summary, n)
+
     epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
 
 # Close Environment
