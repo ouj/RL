@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 from rl.helpers import atleast_4d, set_random_seed
 from rl.stacked_frame_replay_buffer import StackedFrameReplayBuffer
+from rl.schedules import LinearSchedule
 from wrappers.atari_wrappers import EpisodicLifeEnv
 
 
@@ -29,7 +30,7 @@ GAMMA = 0.99
 DECAY = 0.999
 MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 20000
-ITERATIONS = 5000
+ITERATIONS = 50000
 DEMO_NUMBER = 10
 
 FRAME_WIDTH = 150
@@ -38,7 +39,6 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_DECAY = 0.9995
 
 SAVE_CHECKPOINT_EVERY = 50
 DEMO_EVERY=25
@@ -344,9 +344,14 @@ while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
 
 # Main loop
 print("Start Main Loop...")
-epsilon = EPSILON_MAX
 total_steps = 0
+linear_schedule = LinearSchedule(
+    int(0.1 * ITERATIONS),
+    final_p=EPSILON_MIN,
+    initial_p=EPSILON_MAX
+)
 for n in range(ITERATIONS):
+    epsilon = linear_schedule.value(n)
     steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
     train_summary = train(steps)
@@ -387,8 +392,6 @@ for n in range(ITERATIONS):
     if n % DEMO_EVERY == 0:
         summary = demo()
         writer.add_summary(summary, global_step=global_step_val)
-
-    epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
 
 # Close Environment
 env.close()
