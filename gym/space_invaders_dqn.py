@@ -41,7 +41,8 @@ EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
 
 SAVE_CHECKPOINT_EVERY = 50
-DEMO_EVERY=25
+UPDATE_TARGET_EVERY = 500
+DEMO_EVERY = 25
 
 
 def make_env():
@@ -49,12 +50,15 @@ def make_env():
     e = gym.make(env_name)
     # according to the paper, frameskip 4 will make the lasers
     # appear to be disapeared.
-    e.frameskip=3
+    e.frameskip = 3
     return e
+
 
 env = EpisodicLifeEnv(make_env())
 
 # Image preprocessing
+
+
 class ImagePreprocessor:
     def __init__(self):
         with tf.variable_scope("image_preprocessor"):
@@ -117,7 +121,8 @@ class QLayer(tf.layers.Layer):
         self.W = tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W"
         )
-        self.Q = tf.layers.Dense(units=output_dim, trainable=trainable, name="Q")
+        self.Q = tf.layers.Dense(
+            units=output_dim, trainable=trainable, name="Q")
 
     def collect_variables(self):
         variables = []
@@ -177,11 +182,21 @@ image_preprocessor = ImagePreprocessor()
 
 # Inputs
 X = tf.placeholder(
-    shape=(None, FRAME_HEIGHT, FRAME_WIDTH, STACK_SIZE), dtype=tf.float32, name="x"
-)
+    shape=(
+        None,
+        FRAME_HEIGHT,
+        FRAME_WIDTH,
+        STACK_SIZE),
+    dtype=tf.float32,
+    name="x")
 X2 = tf.placeholder(
-    shape=(None, FRAME_HEIGHT, FRAME_WIDTH, STACK_SIZE), dtype=tf.float32, name="x2"
-)
+    shape=(
+        None,
+        FRAME_HEIGHT,
+        FRAME_WIDTH,
+        STACK_SIZE),
+    dtype=tf.float32,
+    name="x2")
 R = tf.placeholder(dtype=tf.float32, shape=(None,), name="reward")  # reward
 D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
 A = tf.placeholder(dtype=tf.int32, shape=(None,), name="action")  # action_dim
@@ -317,8 +332,12 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        session.run([train_op, update_op], feed_dict=feed_dict)
+        _, global_step_val = session.run(
+            [train_op, global_step], feed_dict=feed_dict)
+        if global_step_val % UPDATE_TARGET_EVERY == 0:
+            session.run(copy_op)
     return session.run(summary_op, feed_dict)
+
 
 def demo():
     demo_env = gym.wrappers.Monitor(
@@ -335,6 +354,7 @@ def demo():
     summary.value.add(tag="demo/Steps", simple_value=steps)
     demo_env.close()
     return summary
+
 
 # Populate replay buffer
 print("Populating replay buffer...")
