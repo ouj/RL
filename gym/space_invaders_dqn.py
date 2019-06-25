@@ -260,7 +260,7 @@ writer = tf.summary.FileWriter(LOGGING_DIR)
 writer.add_graph(session.graph)
 
 # Saver
-saver = tf.train.Saver(max_to_keep=10)
+saver = tf.train.Saver()
 last_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
 if last_checkpoint is not None:
     saver.restore(session, last_checkpoint)
@@ -369,7 +369,9 @@ epsilon = linear_schedule.value(session.run(global_step))
 print("Populating replay buffer with epsilon %f..." % epsilon)
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
     steps, total_return = play_once(env, epsilon, render=False)
-    print("Played %d steps" % steps)
+    print(
+        "Played %d < %d steps" %
+        (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
 print("Start Main Loop...")
@@ -403,7 +405,7 @@ for n in range(ITERATIONS):
     writer.add_summary(train_summary, global_step=gstep)
     writer.add_summary(summary, global_step=gstep)
 
-    if n % SAVE_CHECKPOINT_EVERY == 0:
+    if n != 0 and n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(
             session,
             os.path.join(CHECKPOINT_DIR, "model"),
