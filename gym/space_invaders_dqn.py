@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.7
 import os
 import sys
+from collections import deque
 from datetime import datetime
 import gym
 import numpy as np
@@ -20,18 +21,18 @@ set_random_seed(0)
 FILENAME = "space_invadors_dpn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run2")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 5e-4
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.999
 MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 20000
-ITERATIONS = 50000
-DEMO_NUMBER = 10
+ITERATIONS = 10000
+
 
 FRAME_WIDTH = 150
 FRAME_HEIGHT = 190
@@ -39,10 +40,10 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
+EPSILON_STEPS = 1000000
 
-SAVE_CHECKPOINT_EVERY = 50
-UPDATE_TARGET_EVERY = 500
-DEMO_EVERY = 25
+SAVE_CHECKPOINT_EVERY = 100
+DEMO_EVERY = 10
 
 
 def make_env():
@@ -269,13 +270,15 @@ if last_checkpoint is not None:
 # Frame Stack
 class FrameStack:
     def __init__(self, initial_frame, stack_size=STACK_SIZE):
-        self.stack = np.stack([initial_frame] * STACK_SIZE, axis=2)
+        self.stack = deque(maxlen=stack_size)
+        for _ in range(stack_size):
+            self.stack.append(initial_frame)
 
     def append(self, frame):
-        np.append(self.stack[:, :, 1:], np.expand_dims(frame, 2), axis=2)
+        self.stack.append(frame)
 
     def get_state(self):
-        return self.stack
+        return np.stack(self.stack, axis=2)
 
 
 replay_buffer = StackedFrameReplayBuffer(
@@ -288,6 +291,8 @@ replay_buffer = StackedFrameReplayBuffer(
 )
 
 # Play
+
+
 def sample_action(env, state, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
@@ -332,10 +337,8 @@ def train(steps):
             R: batch["r"],
             D: batch["d"],
         }
-        _, global_step_val = session.run(
-            [train_op, global_step], feed_dict=feed_dict)
-        if global_step_val % UPDATE_TARGET_EVERY == 0:
-            session.run(copy_op)
+        session.run(
+            [train_op, update_op], feed_dict=feed_dict)
     return session.run(summary_op, feed_dict)
 
 
@@ -350,27 +353,30 @@ def demo():
     steps, total_return = play_once(demo_env, 0.05, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     summary = tf.Summary()
-    summary.value.add(tag="demo/Return", simple_value=total_return)
-    summary.value.add(tag="demo/Steps", simple_value=steps)
+    summary.value.add(tag="demo/return", simple_value=total_return)
+    summary.value.add(tag="demo/steps", simple_value=steps)
     demo_env.close()
     return summary
 
 
+linear_schedule = LinearSchedule(
+    int(EPSILON_STEPS),
+    final_p=EPSILON_MIN,
+    initial_p=EPSILON_MAX
+)
+epsilon = linear_schedule.value(session.run(global_step))
 # Populate replay buffer
-print("Populating replay buffer...")
+print("Populating replay buffer with epsilon %f..." % epsilon)
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    steps, total_return = play_once(env, 0.0, render=False)
+    steps, total_return = play_once(env, epsilon, render=False)
     print("Played %d steps" % steps)
 
 # Main loop
 print("Start Main Loop...")
 total_steps = 0
-linear_schedule = LinearSchedule(
-    int(0.1 * ITERATIONS),
-    final_p=EPSILON_MIN,
-    initial_p=EPSILON_MAX
-)
+
 for n in range(ITERATIONS):
+    gstep = tf.train.global_step(session, global_step)
     epsilon = linear_schedule.value(n)
     steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
@@ -393,25 +399,24 @@ for n in range(ITERATIONS):
     )
 
     summary = tf.Summary()
-    summary.value.add(tag="train/Return", simple_value=total_return)
-    summary.value.add(tag="train/Steps", simple_value=steps)
-    summary.value.add(tag="train/Duration", simple_value=delta.total_seconds())
-    summary.value.add(tag="train/Epsilon", simple_value=epsilon)
-    global_step_val = tf.train.global_step(session, global_step)
-    writer.add_summary(train_summary, global_step=global_step_val)
-    writer.add_summary(summary, global_step=global_step_val)
+    summary.value.add(tag="misc/return", simple_value=total_return)
+    summary.value.add(tag="misc/steps", simple_value=steps)
+    summary.value.add(tag="misc/duration", simple_value=delta.total_seconds())
+    summary.value.add(tag="misc/epsilon", simple_value=epsilon)
+    writer.add_summary(train_summary, global_step=gstep)
+    writer.add_summary(summary, global_step=gstep)
 
     if n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(
             session,
             os.path.join(CHECKPOINT_DIR, "model"),
-            global_step=global_step_val
+            global_step=gstep
         )
         print("Saved checkpoint to", path)
 
     if n % DEMO_EVERY == 0:
         summary = demo()
-        writer.add_summary(summary, global_step=global_step_val)
+        writer.add_summary(summary, global_step=gstep)
 
 # Close Environment
 env.close()
