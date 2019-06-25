@@ -373,15 +373,12 @@ while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
 
 # Main loop
 print("Start Main Loop...")
-total_steps = 0
-
 for n in range(ITERATIONS):
     gstep = tf.train.global_step(session, global_step)
-    epsilon = linear_schedule.value(n)
+    epsilon = linear_schedule.value(gstep)
     steps, total_return = play_once(env, epsilon)
     t0 = datetime.now()
     train_summary = train(steps)
-    total_steps += steps
     delta = datetime.now() - t0
     print(
         "Episode:",
@@ -394,8 +391,8 @@ for n in range(ITERATIONS):
         delta.total_seconds(),
         "Epsilon",
         epsilon,
-        "Total Steps:",
-        total_steps
+        "Global Steps:",
+        gstep
     )
 
     summary = tf.Summary()
