@@ -21,11 +21,11 @@ set_random_seed(0)
 FILENAME = "space_invadors_dpn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run2")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run3")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.999
@@ -40,14 +40,14 @@ STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_STEPS = 1000000
+EPSILON_STEPS = 2000000
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
 
 
 def make_env():
-    env_name = "SpaceInvadersDeterministic-v4"
+    env_name = "SpaceInvaders-v4"
     e = gym.make(env_name)
     # according to the paper, frameskip 4 will make the lasers
     # appear to be disapeared.
@@ -76,7 +76,7 @@ class ImagePreprocessor:
 
 # Layer Definitions
 class ConvLayer(tf.layers.Layer):
-    def __init__(self, activation=tf.nn.relu):
+    def __init__(self, activation=tf.nn.elu):
         super(ConvLayer, self).__init__()
         self.conv1 = tf.layers.Conv2D(
             filters=32,
@@ -96,11 +96,20 @@ class ConvLayer(tf.layers.Layer):
             kernel_initializer=tf.initializers.glorot_normal,
             name="conv2",
         )
+        self.conv3 = tf.layers.Conv2D(
+            filters=64,
+            kernel_size=3,
+            strides=2,
+            padding="valid",
+            activation=activation,
+            kernel_initializer=tf.initializers.glorot_normal,
+            name="conv3",
+        )
         self.flatten = tf.layers.Flatten(name="flatten")
 
     def collect_variables(self):
         variables = []
-        for layer in [self.conv1, self.conv2]:
+        for layer in [self.conv1, self.conv2, self.conv3]:
             variables += layer.variables
         return variables
 
@@ -112,12 +121,13 @@ class ConvLayer(tf.layers.Layer):
     def call(self, inputs):
         x = self.conv1(inputs)
         x = self.conv2(x)
+        x = self.conv3(x)
         x = self.flatten(x)
         return x
 
 
 class QLayer(tf.layers.Layer):
-    def __init__(self, output_dim, activation=tf.nn.relu, trainable=True):
+    def __init__(self, output_dim, activation=tf.nn.elu, trainable=True):
         super(QLayer, self).__init__()
         self.W = tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W"
