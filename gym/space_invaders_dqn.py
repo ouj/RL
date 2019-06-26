@@ -10,6 +10,7 @@ from rl.helpers import atleast_4d, set_random_seed
 from rl.stacked_frame_replay_buffer import StackedFrameReplayBuffer
 from rl.schedules import LinearSchedule
 from wrappers.atari_wrappers import EpisodicLifeEnv
+from wrappers.atari_wrappers import WarpFrame
 
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -21,7 +22,7 @@ set_random_seed(0)
 FILENAME = "space_invadors_dpn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run3")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run4")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
@@ -30,12 +31,12 @@ BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.999
 MINIMAL_SAMPLES = 10000
-MAXIMAL_SAMPLES = 20000
+MAXIMAL_SAMPLES = 60000
 ITERATIONS = 10000
 
 
-FRAME_WIDTH = 150
-FRAME_HEIGHT = 190
+FRAME_WIDTH = 84
+FRAME_HEIGHT = 84
 STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
@@ -45,21 +46,24 @@ EPSILON_STEPS = 2000000
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
 
+env_name = "SpaceInvadersNoFrameskip-v4"
 
-def make_env():
-    env_name = "SpaceInvaders-v4"
+def make_train_env(env_name):
+    assert "NoFrameskip" in env_name
     e = gym.make(env_name)
-    # according to the paper, frameskip 4 will make the lasers
-    # appear to be disapeared.
-    e.frameskip = 3
+    e = EpisodicLifeEnv(e)
+    e = WarpFrame(e)
     return e
 
+def make_test_env(env_name):
+    assert "NoFrameskip" in env_name
+    e = gym.make(env_name)
+    e = WarpFrame(e)
+    return e
 
-env = EpisodicLifeEnv(make_env())
+env = EpisodicLifeEnv(make_train_env(env_name))
 
 # Image preprocessing
-
-
 class ImagePreprocessor:
     def __init__(self):
         with tf.variable_scope("image_preprocessor"):
@@ -105,7 +109,6 @@ class ConvLayer(tf.layers.Layer):
             kernel_initializer=tf.initializers.glorot_normal,
             name="conv3",
         )
-        self.flatten = tf.layers.Flatten(name="flatten")
 
     def collect_variables(self):
         variables = []
@@ -122,13 +125,13 @@ class ConvLayer(tf.layers.Layer):
         x = self.conv1(inputs)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = self.flatten(x)
         return x
 
 
 class QLayer(tf.layers.Layer):
     def __init__(self, output_dim, activation=tf.nn.elu, trainable=True):
         super(QLayer, self).__init__()
+        self.flatten = tf.layers.Flatten(name="flatten")
         self.W = tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W"
         )
@@ -137,7 +140,7 @@ class QLayer(tf.layers.Layer):
 
     def collect_variables(self):
         variables = []
-        for layer in [self.W, self.Q]:
+        for layer in [self.flatten, self.W, self.Q]:
             variables += layer.variables
         return variables
 
@@ -182,7 +185,8 @@ class QLayer(tf.layers.Layer):
             tf.summary.histogram(v.name, v)
 
     def call(self, inputs):
-        x = self.W(inputs)
+        x = self.flatten(inputs)
+        x = self.W(x)
         x = self.Q(x)
         return x
 
@@ -312,19 +316,20 @@ def sample_action(env, state, epsilon):
 
 
 def play_once(env, epsilon, render=False):
-    observation = env.reset()
+    frame = env.reset()
     done = False
     steps = 0
     total_return = 0
-    frame = image_preprocessor.transform(observation, session)
+    # frame = image_preprocessor.transform(observation, session)
+    frame = np.squeeze(frame)
     frame_stack = FrameStack(frame)
     while not done:
         state = frame_stack.get_state()
 
         action = sample_action(env, state, epsilon)
-        observation, reward, done, _ = env.step(action)
-
-        frame = image_preprocessor.transform(observation, session)
+        frame, reward, done, _ = env.step(action)
+        frame = np.squeeze(frame)
+        # frame = image_preprocessor.transform(observation, session)
         frame_stack.append(frame)
 
         replay_buffer.store(frame, action, reward, done)
@@ -354,7 +359,7 @@ def train(steps):
 
 def demo():
     demo_env = gym.wrappers.Monitor(
-        make_env(),
+        make_test_env(env_name),
         MONITOR_DIR,
         resume=True,
         mode="evaluation",
