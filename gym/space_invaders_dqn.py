@@ -26,7 +26,7 @@ LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.999
@@ -78,7 +78,7 @@ class ImagePreprocessor:
 
 # Layer Definitions
 class ConvLayer(tf.layers.Layer):
-    def __init__(self, activation=tf.nn.elu):
+    def __init__(self, activation=tf.nn.relu):
         super(ConvLayer, self).__init__()
         self.conv1 = tf.layers.Conv2D(
             filters=32,
@@ -86,8 +86,13 @@ class ConvLayer(tf.layers.Layer):
             strides=4,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_normal,
+            kernel_initializer=tf.initializers.glorot_uniform,
             name="conv1",
+            use_bias=False,
+        )
+        self.batch_norm1 = tf.layers.BatchNormalization(
+            epsilon=1e-5,
+            name="batch_norm1",
         )
         self.conv2 = tf.layers.Conv2D(
             filters=64,
@@ -95,22 +100,28 @@ class ConvLayer(tf.layers.Layer):
             strides=2,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_normal,
+            kernel_initializer=tf.initializers.glorot_uniform,
             name="conv2",
+            use_bias=False
+        )
+        self.batch_norm2 = tf.layers.BatchNormalization(
+            epsilon=1e-5,
+            name="batch_norm2",
         )
         self.conv3 = tf.layers.Conv2D(
-            filters=32,
-            kernel_size=4,
-            strides=2,
+            filters=64,
+            kernel_size=3,
+            strides=1,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_normal,
+            kernel_initializer=tf.initializers.glorot_uniform,
             name="conv3",
+            use_bias=True,
         )
 
     def collect_variables(self):
         variables = []
-        for layer in [self.conv1, self.conv2, self.conv3]:
+        for layer in [self.conv1, self.batch_norm1, self.conv2, self.batch_norm2, self.conv3]:
             variables += layer.variables
         return variables
 
@@ -121,20 +132,25 @@ class ConvLayer(tf.layers.Layer):
 
     def call(self, inputs):
         x = self.conv1(inputs)
+        x = self.batch_norm1(x)
         x = self.conv2(x)
+        x = self.batch_norm2(x)
         x = self.conv3(x)
         return x
 
 
 class QLayer(tf.layers.Layer):
-    def __init__(self, output_dim, activation=tf.nn.elu, trainable=True):
+    def __init__(self, output_dim, activation=tf.nn.relu, trainable=True):
         super(QLayer, self).__init__()
         self.flatten = tf.layers.Flatten(name="flatten")
         self.W = tf.layers.Dense(
-            units=512, activation=activation, trainable=trainable, name="W"
+            units=512, activation=activation, trainable=trainable, name="W",
+            kernel_initializer=tf.initializers.glorot_uniform,
         )
         self.Q = tf.layers.Dense(
-            units=output_dim, trainable=trainable, name="Q")
+            units=output_dim, trainable=trainable, name="Q",
+            kernel_initializer=tf.initializers.glorot_uniform
+        )
 
     def collect_variables(self):
         variables = []
