@@ -22,26 +22,26 @@ set_random_seed(0)
 FILENAME = "space_invadors_dpn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run4")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 5e-4
 BATCH_SIZE = 32
 GAMMA = 0.99
 DECAY = 0.999
 MINIMAL_SAMPLES = 10000
-MAXIMAL_SAMPLES = 60000
+MAXIMAL_SAMPLES = 30000
 ITERATIONS = 10000
 
 
-FRAME_WIDTH = 84
-FRAME_HEIGHT = 84
+FRAME_WIDTH = 150
+FRAME_HEIGHT = 190
 STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_STEPS = 2000000
+EPSILON_STEPS = 5000000
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
@@ -52,16 +52,14 @@ def make_train_env(env_name):
     assert "NoFrameskip" in env_name
     e = gym.make(env_name)
     e = EpisodicLifeEnv(e)
-    e = WarpFrame(e)
     return e
 
 def make_test_env(env_name):
     assert "NoFrameskip" in env_name
     e = gym.make(env_name)
-    e = WarpFrame(e)
     return e
 
-env = EpisodicLifeEnv(make_train_env(env_name))
+env = make_train_env(env_name)
 
 # Image preprocessing
 class ImagePreprocessor:
@@ -101,8 +99,8 @@ class ConvLayer(tf.layers.Layer):
             name="conv2",
         )
         self.conv3 = tf.layers.Conv2D(
-            filters=64,
-            kernel_size=3,
+            filters=32,
+            kernel_size=4,
             strides=2,
             padding="valid",
             activation=activation,
@@ -316,20 +314,18 @@ def sample_action(env, state, epsilon):
 
 
 def play_once(env, epsilon, render=False):
-    frame = env.reset()
+    observation = env.reset()
     done = False
     steps = 0
     total_return = 0
-    # frame = image_preprocessor.transform(observation, session)
-    frame = np.squeeze(frame)
+    frame = image_preprocessor.transform(observation, session)
     frame_stack = FrameStack(frame)
     while not done:
         state = frame_stack.get_state()
 
         action = sample_action(env, state, epsilon)
-        frame, reward, done, _ = env.step(action)
-        frame = np.squeeze(frame)
-        # frame = image_preprocessor.transform(observation, session)
+        observation, reward, done, _ = env.step(action)
+        frame = image_preprocessor.transform(observation, session)
         frame_stack.append(frame)
 
         replay_buffer.store(frame, action, reward, done)
