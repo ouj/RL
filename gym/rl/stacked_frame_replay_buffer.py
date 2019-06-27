@@ -7,7 +7,6 @@ class StackedFrameReplayBuffer:
         frame_height,
         frame_width,
         stack_size,
-        action_dim,
         batch_size=32,
         max_size=10000,
     ):
@@ -16,7 +15,7 @@ class StackedFrameReplayBuffer:
         self.stack_size = stack_size
         self.max_size = max_size
         self.frames = np.zeros([max_size, frame_height, frame_width], dtype=np.float32)
-        self.actions = np.zeros([max_size, action_dim], dtype=np.float32)
+        self.actions = np.zeros(max_size, dtype=np.float32)
         self.rewards = np.zeros(max_size, dtype=np.float32)
         self.dones = np.zeros(max_size, dtype=np.float32)
         self.frame_width = frame_width

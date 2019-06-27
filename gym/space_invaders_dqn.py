@@ -46,17 +46,16 @@ EPSILON_STEPS = 5000000
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
 
-env_name = "SpaceInvadersNoFrameskip-v4"
+env_name = "SpaceInvadersDeterministic-v4"
 
 def make_train_env(env_name):
-    assert "NoFrameskip" in env_name
     e = gym.make(env_name)
-    e = EpisodicLifeEnv(e)
+    assert e.frameskip == 3
     return e
 
 def make_test_env(env_name):
-    assert "NoFrameskip" in env_name
     e = gym.make(env_name)
+    assert e.frameskip == 3
     return e
 
 env = make_train_env(env_name)
@@ -66,8 +65,8 @@ class ImagePreprocessor:
     def __init__(self):
         with tf.variable_scope("image_preprocessor"):
             self.input = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
-            t = tf.image.convert_image_dtype(self.input, dtype=tf.float32)
-            t = tf.image.rgb_to_grayscale(t)
+            t = tf.image.rgb_to_grayscale(self.input)
+            t = tf.image.convert_image_dtype(t, dtype=tf.float32)
             t = tf.image.crop_to_bounding_box(t, 10, 5, 190, 150)
             self.output = tf.squeeze(t)
 
@@ -313,7 +312,6 @@ replay_buffer = StackedFrameReplayBuffer(
     frame_height=FRAME_HEIGHT,
     frame_width=FRAME_WIDTH,
     stack_size=STACK_SIZE,
-    action_dim=1,
     batch_size=BATCH_SIZE,
     max_size=MAXIMAL_SAMPLES,
 )
@@ -360,7 +358,7 @@ def train(steps):
         feed_dict = {
             X: batch["s"],
             X2: batch["s2"],
-            A: np.squeeze(batch["a"]),
+            A: batch["a"],
             R: batch["r"],
             D: batch["d"],
         }
