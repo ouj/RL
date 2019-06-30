@@ -25,8 +25,9 @@ MU_LEARNING_RATE = 1e-3
 Q_LEARNING_RATE = 1e-3
 GAMMA = 0.99
 DECAY = 0.995
-MINIMAL_SAMPLES = 10000
-MAXIMAL_SAMPLES = 1000000
+ACTION_NOISE = 0.15
+MINIMAL_SAMPLES = 100000
+MAXIMAL_SAMPLES = 5000000
 ITERATIONS = 10000
 
 EPSILON_MAX = 1.00
@@ -41,7 +42,7 @@ env = gym.make("BipedalWalker-v2")
 
 
 class MuNetwork(MLPNetwork):
-    def __init__(self, output_dim, activation=tf.nn.relu, trainable=True):
+    def __init__(self, output_dim, activation=tf.nn.relu, output_activation=tf.nn.tanh, trainable=True):
         super(MuNetwork, self).__init__()
         self.layers = [
             tf.layers.Dense(
@@ -60,6 +61,7 @@ class MuNetwork(MLPNetwork):
             ),
             tf.layers.Dense(
                 units=output_dim,
+                activation=output_activation,
                 trainable=trainable,
                 name="MU",
                 kernel_initializer=tf.initializers.glorot_normal,
@@ -110,6 +112,7 @@ R = tf.placeholder(dtype=tf.float32, shape=(None,), name="reward")  # reward
 D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
 
 action_dim = env.action_space.shape[0]
+action_max = env.action_space.high
 
 mu_network = MuNetwork(output_dim=action_dim, trainable=True)
 q_network = QNetwork(trainable=True)
@@ -117,25 +120,19 @@ q_network = QNetwork(trainable=True)
 target_mu_network = MuNetwork(output_dim=action_dim, trainable=False)
 target_q_network = QNetwork(trainable=False)
 
-mu = mu_network(X)
+mu = action_max * mu_network(X)
 Q = q_network(tf.concat([X, A], axis=-1))
 Q_mu = q_network(tf.concat([X, mu], axis=-1))
 
 next_mu = target_mu_network(X2)
 next_Q = target_q_network(tf.concat([X2, next_mu], axis=-1))
 
-global_step = tf.train.get_or_create_global_step()
+with tf.name_scope("global_step"):
+    global_step = tf.train.get_or_create_global_step()
+    global_step_op = tf.assign_add(global_step, 1, name="increment")
 
 with tf.name_scope("predict_op"):
     predict_op = mu
-
-
-with tf.name_scope("mu_train_op"):
-    mu_loss = -tf.reduce_mean(Q_mu)
-    mu_train_op = tf.train.AdamOptimizer(learning_rate=MU_LEARNING_RATE).minimize(
-        mu_loss, var_list=mu_network.collect_variables()
-    )
-    tf.summary.scalar("Mu_loss", mu_loss)
 
 with tf.name_scope("q_train_op"):
     G = tf.stop_gradient(R + GAMMA * (1 - D) * next_Q)
@@ -149,6 +146,12 @@ with tf.name_scope("q_train_op"):
     tf.summary.scalar("G_mean", tf.reduce_mean(G))
     tf.summary.scalar("Q_loss", q_loss)
 
+with tf.name_scope("mu_train_op"):
+    mu_loss = -tf.reduce_mean(Q_mu)
+    mu_train_op = tf.train.AdamOptimizer(learning_rate=MU_LEARNING_RATE).minimize(
+        mu_loss, var_list=mu_network.collect_variables()
+    )
+    tf.summary.scalar("Mu_loss", mu_loss)
 
 with tf.name_scope("copy_op"):
     copy_op = tf.group(
@@ -226,14 +229,15 @@ if last_checkpoint is not None:
     saver.restore(session, last_checkpoint)
     print("Restored last checkpoint", last_checkpoint)
 
-
 # Play
 def sample_action(env, observation, epsilon):
     if np.random.random() < epsilon:
         return env.action_space.sample()
     else:
         feed_dict = {X: np.atleast_2d(observation)}
-        return session.run(predict_op, feed_dict)[0]
+        action = session.run(predict_op, feed_dict)[0]
+        action += ACTION_NOISE * np.random.randn(action_dim)
+        return np.clip(action, -action_max, action_max)
 
 
 def play_once(env, epsilon, render=False):
@@ -268,8 +272,8 @@ def train(steps):
         }
         session.run(q_train_op, feed_dict)
         session.run(mu_train_op, feed_dict)
-        session.run(update_op)
-    return session.run(summary_op, feed_dict)
+    summary, _, _ = session.run([summary_op, update_op, global_step_op], feed_dict)
+    return summary
 
 
 def demo():
@@ -293,7 +297,7 @@ epsilon = linear_schedule.value(session.run(global_step))
 # Populate replay buffer
 print("Populating replay buffer with epsilon %f..." % epsilon)
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    steps, total_return = play_once(env, epsilon, render=True)
+    steps, total_return = play_once(env, epsilon, render=False)
     print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
