@@ -27,7 +27,7 @@ GAMMA = 0.99
 DECAY = 0.995
 ACTION_NOISE = 0.15
 MINIMAL_SAMPLES = 100000
-MAXIMAL_SAMPLES = 5000000
+MAXIMAL_SAMPLES = 1000000
 ITERATIONS = 10000
 
 EPSILON_MAX = 1.00
@@ -240,12 +240,12 @@ def sample_action(env, observation, epsilon):
         return np.clip(action, -action_max, action_max)
 
 
-def play_once(env, epsilon, render=False):
+def play_once(env, epsilon, max_steps=1600, render=False):
     observation = env.reset()
     done = False
     steps = 0
     total_return = 0
-    while not done:
+    while not done and steps < max_steps:
         action = sample_action(env, observation, epsilon)
         next_observation, reward, done, _ = env.step(action)
 
@@ -272,8 +272,8 @@ def train(steps):
         }
         session.run(q_train_op, feed_dict)
         session.run(mu_train_op, feed_dict)
-    summary, _, _ = session.run([summary_op, update_op, global_step_op], feed_dict)
-    return summary
+        session.run([update_op, global_step_op])
+    return session.run(summary_op, feed_dict)
 
 
 def demo():
@@ -297,7 +297,7 @@ epsilon = linear_schedule.value(session.run(global_step))
 # Populate replay buffer
 print("Populating replay buffer with epsilon %f..." % epsilon)
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    steps, total_return = play_once(env, epsilon, render=False)
+    steps, total_return = play_once(env, epsilon, max_steps=200, render=False)
     print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
@@ -305,7 +305,7 @@ print("Start Main Loop...")
 for n in range(ITERATIONS):
     gstep = tf.train.global_step(session, global_step)
     epsilon = linear_schedule.value(gstep)
-    steps, total_return = play_once(env, epsilon)
+    steps, total_return = play_once(env, epsilon, max_steps=200)
     t0 = datetime.now()
     train_summary = train(steps)
     delta = datetime.now() - t0
