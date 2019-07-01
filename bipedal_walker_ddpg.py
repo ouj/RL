@@ -17,18 +17,21 @@ set_random_seed(0)
 FILENAME = "bipedal_walker_ddpg"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run5")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-MU_LEARNING_RATE = 1e-3
-Q_LEARNING_RATE = 1e-3
+MU_LEARNING_RATE = 1e-4
+Q_LEARNING_RATE = 1e-4
 GAMMA = 0.99
 DECAY = 0.995
-ACTION_NOISE = 0.15
-MINIMAL_SAMPLES = 10000
+ACTION_NOISE = 0.1
+MINIMAL_SAMPLES = 50000
 MAXIMAL_SAMPLES = 1000000
-ITERATIONS = 1000000
+ITERATIONS = 100000
+BATCH_SIZE = 64
+
+MAX_EPISODE_LENGTH = 1600
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 100
@@ -54,14 +57,14 @@ class MuNetwork(MLPNetwork):
                 activation=activation,
                 trainable=trainable,
                 name="W",
-                kernel_initializer=tf.initializers.glorot_normal,
+                kernel_initializer=tf.initializers.glorot_uniform,
             ),
             tf.layers.Dense(
                 units=output_dim,
                 activation=output_activation,
                 trainable=trainable,
                 name="MU",
-                kernel_initializer=tf.initializers.glorot_normal,
+                kernel_initializer=tf.initializers.glorot_uniform,
             ),
         ]
 
@@ -79,13 +82,13 @@ class QNetwork(MLPNetwork):
                 activation=activation,
                 trainable=trainable,
                 name="W",
-                kernel_initializer=tf.initializers.glorot_normal,
+                kernel_initializer=tf.initializers.glorot_uniform,
             ),
             tf.layers.Dense(
                 units=1,
                 trainable=trainable,
                 name="Q",
-                kernel_initializer=tf.initializers.glorot_normal,
+                kernel_initializer=tf.initializers.glorot_uniform,
             ),
         ]
 
@@ -234,19 +237,23 @@ def get_action(observation):
     return np.clip(action, -action_max, action_max)
 
 
-def play_once(env, random_action, max_steps=1600, render=False):
+def play_once(env, random_action, max_steps=MAX_EPISODE_LENGTH, render=False):
     observation = env.reset()
     done = False
     steps = 0
     total_return = 0
-    while not done and steps < max_steps:
+    while not done:
         if random_action:
             action = env.action_space.sample()
         else:
             action = get_action(observation)
         next_observation, reward, done, _ = env.step(action)
 
-        replay_buffer.store(observation, action, reward, next_observation, done)
+        # Ignore the "done" signal if it comes from hitting the time
+        # horizon (that is, when it's an artificial terminal signal
+        # that isn't based on the agent's state)
+        d_store = False if steps == max_steps else done
+        replay_buffer.store(observation, action, reward, next_observation, d_store)
 
         observation = next_observation
         steps += 1
@@ -259,7 +266,7 @@ def play_once(env, random_action, max_steps=1600, render=False):
 # Train
 def train(steps):
     for n in range(steps):
-        batch = replay_buffer.sample_batch()
+        batch = replay_buffer.sample_batch(batch_size=BATCH_SIZE)
         feed_dict = {
             X: batch["s"],
             X2: batch["s2"],
@@ -277,7 +284,7 @@ def demo():
     demo_env = gym.wrappers.Monitor(
         env, MONITOR_DIR, resume=True, mode="evaluation", write_upon_reset=True
     )
-    steps, total_return = play_once(demo_env, random_action=False, render=True)
+    steps, total_return = play_once(demo_env, random_action=False, max_steps=MAX_DEMO_STEPS, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     summary = tf.Summary()
     summary.value.add(tag="demo/return", simple_value=total_return)
@@ -288,14 +295,14 @@ def demo():
 # Populate replay buffer
 print("Populating replay buffer")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    steps, total_return = play_once(env, random_action=True, max_steps=200, render=False)
+    steps, total_return = play_once(env, random_action=True, max_steps=MAX_LEARNING_STEPS, render=False)
     print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
 print("Start Main Loop...")
 for n in range(ITERATIONS):
     gstep = tf.train.global_step(session, global_step)
-    steps, total_return = play_once(env, random_action=False, max_steps=200)
+    steps, total_return = play_once(env, random_action=False, max_steps=MAX_LEARNING_STEPS)
     t0 = datetime.now()
     train_summary = train(steps)
     delta = datetime.now() - t0
