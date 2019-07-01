@@ -42,7 +42,13 @@ env = gym.make("BipedalWalker-v2")
 
 
 class MuNetwork(MLPNetwork):
-    def __init__(self, output_dim, activation=tf.nn.relu, output_activation=tf.nn.tanh, trainable=True):
+    def __init__(
+        self,
+        output_dim,
+        activation=tf.nn.relu,
+        output_activation=tf.nn.tanh,
+        trainable=True,
+    ):
         super(MuNetwork, self).__init__()
         self.layers = [
             tf.layers.Dense(
