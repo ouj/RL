@@ -26,13 +26,13 @@ Q_LEARNING_RATE = 1e-3
 GAMMA = 0.99
 DECAY = 0.995
 ACTION_NOISE = 0.15
-MINIMAL_SAMPLES = 100000
+MINIMAL_SAMPLES = 50000
 MAXIMAL_SAMPLES = 1000000
 ITERATIONS = 100000
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
-EPSILON_STEPS = 5000000
+EPSILON_STEPS = 100000
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 100
@@ -45,24 +45,19 @@ class MuNetwork(MLPNetwork):
     def __init__(
         self,
         output_dim,
+        action_max,
         activation=tf.nn.relu,
         output_activation=tf.nn.tanh,
         trainable=True,
     ):
         super(MuNetwork, self).__init__()
+        self.action_max = action_max
         self.layers = [
             tf.layers.Dense(
                 units=512,
                 activation=activation,
                 trainable=trainable,
                 name="W",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-            tf.layers.Dense(
-                units=512,
-                activation=activation,
-                trainable=trainable,
-                name="V",
                 kernel_initializer=tf.initializers.glorot_normal,
             ),
             tf.layers.Dense(
@@ -73,6 +68,10 @@ class MuNetwork(MLPNetwork):
                 kernel_initializer=tf.initializers.glorot_normal,
             ),
         ]
+
+    def call(self, x):
+        x = super(MuNetwork, self).call(x)
+        return self.action_max * x
 
 
 class QNetwork(MLPNetwork):
@@ -87,19 +86,13 @@ class QNetwork(MLPNetwork):
                 kernel_initializer=tf.initializers.glorot_normal,
             ),
             tf.layers.Dense(
-                units=512,
-                activation=activation,
-                trainable=trainable,
-                name="V",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-            tf.layers.Dense(
                 units=1,
                 trainable=trainable,
                 name="Q",
                 kernel_initializer=tf.initializers.glorot_normal,
             ),
         ]
+
 
 
 tf.reset_default_graph()
@@ -120,13 +113,13 @@ D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
 action_dim = env.action_space.shape[0]
 action_max = env.action_space.high
 
-mu_network = MuNetwork(output_dim=action_dim, trainable=True)
+mu_network = MuNetwork(output_dim=action_dim, action_max=action_max, trainable=True)
 q_network = QNetwork(trainable=True)
 
-target_mu_network = MuNetwork(output_dim=action_dim, trainable=False)
+target_mu_network = MuNetwork(output_dim=action_dim, action_max=action_max, trainable=False)
 target_q_network = QNetwork(trainable=False)
 
-mu = action_max * mu_network(X)
+mu = mu_network(X)
 Q = q_network(tf.concat([X, A], axis=-1))
 Q_mu = q_network(tf.concat([X, mu], axis=-1))
 
