@@ -26,13 +26,9 @@ Q_LEARNING_RATE = 1e-3
 GAMMA = 0.99
 DECAY = 0.995
 ACTION_NOISE = 0.15
-MINIMAL_SAMPLES = 50000
+MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 1000000
-ITERATIONS = 100000
-
-EPSILON_MAX = 1.00
-EPSILON_MIN = 0.1
-EPSILON_STEPS = 100000
+ITERATIONS = 1000000
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 100
@@ -202,7 +198,9 @@ class ReplayBuffer:
 
 
 replay_buffer = ReplayBuffer(
-    observation_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0]
+    observation_dim=env.observation_space.shape[0],
+    action_dim=env.action_space.shape[0],
+    max_size=MAXIMAL_SAMPLES
 )
 
 # Initialize Session and Run copy ops
@@ -229,23 +227,23 @@ if last_checkpoint is not None:
     print("Restored last checkpoint", last_checkpoint)
 
 # Play
-def sample_action(env, observation, epsilon):
-    if np.random.random() < epsilon:
-        return env.action_space.sample()
-    else:
-        feed_dict = {X: np.atleast_2d(observation)}
-        action = session.run(predict_op, feed_dict)[0]
-        action += ACTION_NOISE * np.random.randn(action_dim)
-        return np.clip(action, -action_max, action_max)
+def get_action(observation):
+    feed_dict = {X: np.atleast_2d(observation)}
+    action = session.run(predict_op, feed_dict)[0]
+    action += ACTION_NOISE * np.random.randn(action_dim)
+    return np.clip(action, -action_max, action_max)
 
 
-def play_once(env, epsilon, max_steps=1600, render=False):
+def play_once(env, random_action, max_steps=1600, render=False):
     observation = env.reset()
     done = False
     steps = 0
     total_return = 0
     while not done and steps < max_steps:
-        action = sample_action(env, observation, epsilon)
+        if random_action:
+            action = env.action_space.sample()
+        else:
+            action = get_action(observation)
         next_observation, reward, done, _ = env.step(action)
 
         replay_buffer.store(observation, action, reward, next_observation, done)
@@ -279,7 +277,7 @@ def demo():
     demo_env = gym.wrappers.Monitor(
         env, MONITOR_DIR, resume=True, mode="evaluation", write_upon_reset=True
     )
-    steps, total_return = play_once(demo_env, 0.05, render=True)
+    steps, total_return = play_once(demo_env, random_action=False, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     summary = tf.Summary()
     summary.value.add(tag="demo/return", simple_value=total_return)
@@ -287,24 +285,17 @@ def demo():
     demo_env.close()
     return summary
 
-
-linear_schedule = LinearSchedule(
-    int(EPSILON_STEPS), final_p=EPSILON_MIN, initial_p=EPSILON_MAX
-)
-epsilon = linear_schedule.value(session.run(global_step))
-
 # Populate replay buffer
-print("Populating replay buffer with epsilon %f..." % epsilon)
+print("Populating replay buffer")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
-    steps, total_return = play_once(env, epsilon, max_steps=200, render=False)
+    steps, total_return = play_once(env, random_action=True, max_steps=200, render=False)
     print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
 print("Start Main Loop...")
 for n in range(ITERATIONS):
     gstep = tf.train.global_step(session, global_step)
-    epsilon = linear_schedule.value(gstep)
-    steps, total_return = play_once(env, epsilon, max_steps=200)
+    steps, total_return = play_once(env, random_action=False, max_steps=200)
     t0 = datetime.now()
     train_summary = train(steps)
     delta = datetime.now() - t0
@@ -317,8 +308,6 @@ for n in range(ITERATIONS):
         steps,
         "Duration:",
         delta.total_seconds(),
-        "Epsilon",
-        epsilon,
         "Global Steps:",
         gstep,
     )
@@ -327,7 +316,6 @@ for n in range(ITERATIONS):
     summary.value.add(tag="misc/return", simple_value=total_return)
     summary.value.add(tag="misc/steps", simple_value=steps)
     summary.value.add(tag="misc/duration", simple_value=delta.total_seconds())
-    summary.value.add(tag="misc/epsilon", simple_value=epsilon)
     writer.add_summary(train_summary, global_step=gstep)
     writer.add_summary(summary, global_step=gstep)
 
