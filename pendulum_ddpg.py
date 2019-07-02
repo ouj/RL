@@ -14,10 +14,10 @@ from rl.schedules import LinearSchedule
 set_random_seed(0)
 
 # Path and folders
-FILENAME = "bipedal_walker_ddpg"
+FILENAME = "pendulum_ddpg"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run5")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run3")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
@@ -31,13 +31,13 @@ MAXIMAL_SAMPLES = 1000000
 ITERATIONS = 100000
 BATCH_SIZE = 64
 
-MAX_EPISODE_LENGTH = 1600
+MAX_EPISODE_LENGTH = 200
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 100
 
 # Environment
-env = gym.make("BipedalWalker-v2")
+env = gym.make("Pendulum-v0")
 
 
 class MuNetwork(MLPNetwork):
@@ -57,14 +57,14 @@ class MuNetwork(MLPNetwork):
                 activation=activation,
                 trainable=trainable,
                 name="W",
-                kernel_initializer=tf.initializers.glorot_uniform,
+                kernel_initializer=tf.initializers.glorot_normal,
             ),
             tf.layers.Dense(
                 units=output_dim,
                 activation=output_activation,
                 trainable=trainable,
                 name="MU",
-                kernel_initializer=tf.initializers.glorot_uniform,
+                kernel_initializer=tf.initializers.glorot_normal,
             ),
         ]
 
@@ -82,13 +82,13 @@ class QNetwork(MLPNetwork):
                 activation=activation,
                 trainable=trainable,
                 name="W",
-                kernel_initializer=tf.initializers.glorot_uniform,
+                kernel_initializer=tf.initializers.glorot_normal,
             ),
             tf.layers.Dense(
                 units=1,
                 trainable=trainable,
                 name="Q",
-                kernel_initializer=tf.initializers.glorot_uniform,
+                kernel_initializer=tf.initializers.glorot_normal,
             ),
         ]
 
