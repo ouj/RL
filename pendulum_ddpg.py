@@ -39,62 +39,57 @@ DEMO_EVERY = 100
 # Environment
 env = gym.make("Pendulum-v0")
 
-
-class MuNetwork(MLPNetwork):
-    def __init__(
-        self,
-        output_dim,
-        action_max,
-        activation=tf.nn.relu,
-        output_activation=tf.nn.tanh,
-        trainable=True,
-    ):
-        super(MuNetwork, self).__init__()
-        self.action_max = action_max
-        self.layers = [
-            tf.layers.Dense(
-                units=512,
-                activation=activation,
-                trainable=trainable,
-                name="W",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-            tf.layers.Dense(
-                units=output_dim,
-                activation=output_activation,
-                trainable=trainable,
-                name="MU",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-        ]
-
-    def call(self, x):
-        x = super(MuNetwork, self).call(x)
-        return self.action_max * x
+def create_mu_network(
+    name,
+    output_dim,
+    action_max,
+    activation=tf.nn.relu,
+    output_activation=tf.nn.tanh,
+    trainable=True,
+):
+    return MLPNetwork([
+        tf.layers.Dense(
+            units=512,
+            activation=activation,
+            trainable=trainable,
+            name="W",
+            kernel_initializer=tf.initializers.glorot_normal,
+        ),
+        tf.layers.Dense(
+            units=output_dim,
+            activation=output_activation,
+            trainable=trainable,
+            name="MU",
+            kernel_initializer=tf.initializers.glorot_normal,
+        ),
+        tf.keras.layers.Lambda(
+            lambda x: action_max * x,
+            name="action_max",
+        ),
+    ], name=name)
 
 
-class QNetwork(MLPNetwork):
-    def __init__(self, activation=tf.nn.relu, trainable=True):
-        super(QNetwork, self).__init__()
-        self.layers = [
-            tf.layers.Dense(
-                units=512,
-                activation=activation,
-                trainable=trainable,
-                name="W",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-            tf.layers.Dense(
-                units=1,
-                trainable=trainable,
-                name="Q",
-                kernel_initializer=tf.initializers.glorot_normal,
-            ),
-        ]
 
-    def call(self, x):
-        x = super(QNetwork, self).call(x)
-        return tf.squeeze(x)
+def create_q_network(name, activation=tf.nn.relu, trainable=True):
+    return MLPNetwork([
+        tf.layers.Dense(
+            units=512,
+            activation=activation,
+            trainable=trainable,
+            name="W",
+            kernel_initializer=tf.initializers.glorot_normal,
+        ),
+        tf.layers.Dense(
+            units=1,
+            trainable=trainable,
+            name="Q",
+            kernel_initializer=tf.initializers.glorot_normal,
+        ),
+        tf.keras.layers.Lambda(
+            lambda x: tf.squeeze(x),
+            name="squeeze",
+        ),
+    ], name=name)
 
 
 tf.reset_default_graph()
@@ -115,11 +110,11 @@ D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
 action_dim = env.action_space.shape[0]
 action_max = env.action_space.high[0]
 
-mu_network = MuNetwork(output_dim=action_dim, action_max=action_max, trainable=True)
-q_network = QNetwork(trainable=True)
+mu_network = create_mu_network(name="main/mu", output_dim=action_dim, action_max=action_max, trainable=True)
+q_network = create_q_network(name="main/Q", trainable=True)
 
-target_mu_network = MuNetwork(output_dim=action_dim, action_max=action_max, trainable=False)
-target_q_network = QNetwork(trainable=False)
+target_mu_network = create_mu_network(name="target/mu", output_dim=action_dim, action_max=action_max, trainable=False)
+target_q_network = create_q_network(name="target/Q", trainable=False)
 
 mu = mu_network(X)
 Q = q_network(tf.concat([X, A], axis=-1))

@@ -1,9 +1,9 @@
 import tensorflow as tf
 
 class MLPNetwork(tf.layers.Layer):
-    def __init__(self):
-        super(MLPNetwork, self).__init__()
-        self.layers = []
+    def __init__(self, layers=[], name=None):
+        super(MLPNetwork, self).__init__(name=name)
+        self.layers = layers
 
     def collect_variables(self):
         variables = []
