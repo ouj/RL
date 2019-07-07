@@ -6,9 +6,9 @@ from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
-from rl.helpers import atleast_4d, set_random_seed
-from rl.stacked_frame_replay_buffer import StackedFrameReplayBuffer
-from rl.schedules import LinearSchedule
+from common.helpers import atleast_4d, set_random_seed
+from common.stacked_frame_replay_buffer import StackedFrameReplayBuffer
+from common.schedules import LinearSchedule
 from wrappers.atari_wrappers import EpisodicLifeEnv
 from wrappers.atari_wrappers import WarpFrame
 

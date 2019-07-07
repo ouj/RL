@@ -4,7 +4,7 @@ from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
-from rl.replay_buffer import ReplayBuffer
+from common.replay_buffer import ReplayBuffer
 import matplotlib.pyplot as plt
 
 #%% Set random seeds

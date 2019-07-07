@@ -6,9 +6,9 @@ from datetime import datetime
 import gym
 import numpy as np
 import tensorflow as tf
-from rl.helpers import set_random_seed
-from rl.mlp import MLPNetwork
-from rl.schedules import LinearSchedule
+from common.helpers import set_random_seed
+from common.mlp import MLPNetwork
+from common.schedules import LinearSchedule
 
 
 set_random_seed(0)

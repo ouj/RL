@@ -11,8 +11,8 @@ import os
 from datetime import datetime
 import numpy as np
 import tensorflow as tf
-from rl.helpers import set_random_seed, atleast_4d
-from rl.mlp import MLPNetwork
+from common.helpers import set_random_seed, atleast_4d
+from common.mlp import MLPNetwork
 from matplotlib import pyplot as plt
 
 # Set random seeds
