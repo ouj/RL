@@ -77,7 +77,7 @@ def create_conv_net(activation=tf.nn.relu):
             strides=4,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv1",
             use_bias=False,
         ),
@@ -91,7 +91,7 @@ def create_conv_net(activation=tf.nn.relu):
             strides=2,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv2",
             use_bias=False
         ),
@@ -105,7 +105,7 @@ def create_conv_net(activation=tf.nn.relu):
             strides=1,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv3",
             use_bias=True,
         )
@@ -117,12 +117,12 @@ def create_q_net(output_dim, activation=tf.nn.relu, trainable=True):
         tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W",
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.glorot_uniform(),
         ),
         tf.layers.Dense(
             units=output_dim, trainable=trainable, name="Q",
             activation=tf.nn.softmax,
-            kernel_initializer=tf.initializers.glorot_uniform
+            kernel_initializer=tf.initializers.glorot_uniform(),
         )
     ], name="QNet")
 
@@ -132,11 +132,11 @@ def create_v_net(output_dim, activation=tf.nn.relu, trainable=True):
         tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
             units=512, activation=activation, trainable=trainable, name="W",
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.glorot_uniform(),
         ),
         tf.layers.Dense(
             units=output_dim, trainable=trainable, name="Q",
-            kernel_initializer=tf.initializers.glorot_uniform
+            kernel_initializer=tf.initializers.glorot_uniform(),
         ),
         tf.keras.layers.Lambda(
             lambda x: tf.math.reduce_max(x, axis=1),
