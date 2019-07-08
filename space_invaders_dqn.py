@@ -85,7 +85,7 @@ class ConvLayer(tf.layers.Layer):
             strides=4,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv1",
             use_bias=False,
         )
@@ -99,7 +99,7 @@ class ConvLayer(tf.layers.Layer):
             strides=2,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv2",
             use_bias=False
         )
@@ -113,7 +113,7 @@ class ConvLayer(tf.layers.Layer):
             strides=1,
             padding="valid",
             activation=activation,
-            kernel_initializer=tf.initializers.glorot_uniform,
+            kernel_initializer=tf.initializers.he_normal(),
             name="conv3",
             use_bias=True,
         )
