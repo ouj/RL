@@ -1,11 +1,10 @@
 #!/usr/bin/env python3.7
 
 # TODO:
-# 1. Figure out the initializers for conv net so that we might not need batch norm.
-# 2. Use dataset to feed the data so that we don't have OOM
-# 3. Exam the output V and Q to make sure they are have sensible values
+# 1. Use dataset to feed the data so that we don't have OOM
 
 import gym
+from gym import wrappers
 import retro
 import os
 from datetime import datetime
@@ -26,16 +25,29 @@ LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-P_LEARNING_RATE = 1e-3
-V_LEARNING_RATE = 1e-3
+P_LEARNING_RATE = 1e-5
+V_LEARNING_RATE = 1e-5
 GAMMA = 0.9999
 ITERATIONS = 10000
 
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
 
-env = retro.make(game='KungFu-Nes',
-                 use_restricted_actions=retro.Actions.DISCRETE)
+def create_env():
+    return retro.make(game='KungFu-Nes',
+                     use_restricted_actions=retro.Actions.DISCRETE)
+
+def create_demo_env():
+    demo_env = gym.wrappers.Monitor(
+        create_env(),
+        MONITOR_DIR,
+        resume=True,
+        mode="evaluation",
+        write_upon_reset=True
+    )
+    return demo_env
+
+env = create_env()
 
 tf.reset_default_graph()
 tf.logging.set_verbosity(tf.logging.ERROR)
@@ -79,11 +91,7 @@ def create_conv_net(activation=tf.nn.relu):
             activation=activation,
             kernel_initializer=tf.initializers.he_normal(),
             name="conv1",
-            use_bias=False,
-        ),
-        tf.layers.BatchNormalization(
-            epsilon=1e-5,
-            name="batch_norm1",
+            use_bias=True,
         ),
         tf.layers.Conv2D(
             filters=64,
@@ -93,11 +101,7 @@ def create_conv_net(activation=tf.nn.relu):
             activation=activation,
             kernel_initializer=tf.initializers.he_normal(),
             name="conv2",
-            use_bias=False
-        ),
-        tf.layers.BatchNormalization(
-            epsilon=1e-5,
-            name="batch_norm2",
+            use_bias=True
         ),
         tf.layers.Conv2D(
             filters=64,
@@ -116,7 +120,7 @@ def create_q_net(output_dim, activation=tf.nn.relu, trainable=True):
     return MLPNetwork([
         tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
-            units=512, activation=activation, trainable=trainable, name="W",
+            units=256, activation=activation, trainable=trainable, name="W",
             kernel_initializer=tf.initializers.glorot_uniform(),
         ),
         tf.layers.Dense(
@@ -131,16 +135,13 @@ def create_v_net(output_dim, activation=tf.nn.relu, trainable=True):
     return MLPNetwork([
         tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
-            units=512, activation=activation, trainable=trainable, name="W",
+            units=256, activation=activation, trainable=trainable, name="W",
             kernel_initializer=tf.initializers.glorot_uniform(),
         ),
         tf.layers.Dense(
-            units=output_dim, trainable=trainable, name="Q",
+            units=1, trainable=trainable, name="Q",
             kernel_initializer=tf.initializers.glorot_uniform(),
         ),
-        tf.keras.layers.Lambda(
-            lambda x: tf.math.reduce_max(x, axis=1),
-            name="reduce_max"),
     ], name="VNet")
 
 
@@ -254,16 +255,13 @@ def train(states, actions, returns, epoches=1):
 
 
 def demo():
-    # demo_env = gym.wrappers.Monitor(
-    #     env, MONITOR_DIR, resume=True, mode="evaluation", write_upon_reset=True
-    # )
-    demo_env = env
+    demo_env = create_demo_env()
     steps, total_return, _, _, _ = play(demo_env, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     summary = tf.Summary()
     summary.value.add(tag="demo/return", simple_value=total_return)
     summary.value.add(tag="demo/steps", simple_value=steps)
-    # demo_env.close()
+    demo_env.close()
     return summary
 
 
@@ -302,8 +300,10 @@ for n in range(ITERATIONS):
         print("Saved checkpoint to", path)
 
     if n % DEMO_EVERY == 0:
+        env.close()
         summary = demo()
         writer.add_summary(summary, global_step=gstep)
+        env = create_env()
 
 
 env.close()
