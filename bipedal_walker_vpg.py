@@ -21,9 +21,9 @@ LOGGING_DIR = os.path.join("output", FILENAME, "log", "run5")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-P_LEARNING_RATE = 1e-5
-V_LEARNING_RATE = 1e-5
-GAMMA = 0.9999
+P_LEARNING_RATE = 1e-3
+V_LEARNING_RATE = 1e-3
+GAMMA = 0.99
 ITERATIONS = 10000
 SAVE_CHECKPOINT_EVERY = 100
 DEMO_EVERY = 10
