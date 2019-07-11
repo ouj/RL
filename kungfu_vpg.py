@@ -156,22 +156,24 @@ V = v_net(Z)
 with tf.name_scope("predict_op"):
     predict_op = tf.squeeze(Q)
 
-with tf.name_scope("q_train_op"):
-    advantages = tf.stop_gradient(G - V)
-    tf.summary.histogram("advantages", advantages)
-    selected_prob = tf.log(tf.reduce_sum(
-        Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
-    ))
-    q_loss = -tf.reduce_sum(advantages * selected_prob)
-    tf.summary.scalar("q_loss", q_loss)
-    q_train_op = tf.train.AdamOptimizer(
-        learning_rate=P_LEARNING_RATE).minimize(q_loss)
+with tf.name_scope("train_op"):
+    with tf.name_scope("Policy"):
+        advantages = tf.stop_gradient(G - V)
+        selected_prob = tf.log(tf.reduce_sum(
+            Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
+        ))
+        q_loss = -tf.reduce_sum(advantages * selected_prob)
+        q_train_op = tf.train.AdamOptimizer(
+            learning_rate=P_LEARNING_RATE).minimize(q_loss)
+        tf.summary.scalar("policy_loss", q_loss)
+        tf.summary.scalar("max_advantages", tf.math.reduce_max(advantages))
+        tf.summary.histogram("advantages", advantages)
 
-with tf.name_scope("v_train_op"):
-    tf.summary.histogram("V", V)
-    v_loss = tf.reduce_sum(tf.square(G - V))
-    tf.summary.scalar("v_loss", v_loss)
-    v_train_op = tf.train.AdamOptimizer(V_LEARNING_RATE).minimize(v_loss)
+    with tf.name_scope("Value"):
+        v_loss = tf.reduce_sum(tf.square(G - V))
+        v_train_op = tf.train.AdamOptimizer(V_LEARNING_RATE).minimize(v_loss)
+        tf.summary.histogram("value", V)
+        tf.summary.scalar("max_value", tf.math.reduce_max(V))
 
 with tf.name_scope("global_step"):
     global_step = tf.train.get_or_create_global_step()
