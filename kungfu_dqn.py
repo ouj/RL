@@ -1,26 +1,26 @@
 #!/usr/bin/env python3.7
+
 import os
 import sys
 from collections import deque
 from datetime import datetime
 import gym
+from gym import wrappers
+import retro
 import numpy as np
 import tensorflow as tf
 from common.mlp import MLPNetwork
 from common.helpers import atleast_4d, set_random_seed
 from common.stacked_frame_replay_buffer import StackedFrameReplayBuffer
 from common.schedules import LinearSchedule
-from wrappers.atari_wrappers import EpisodicLifeEnv
-from wrappers.atari_wrappers import WarpFrame
+from matplotlib import pyplot as plt
 
-
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Set random seeds
 set_random_seed(0)
 
 # Path and folders
-FILENAME = "space_invadors_dpn"
+FILENAME = "kungfu_dqn"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
 LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
@@ -35,48 +35,58 @@ MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 30000
 ITERATIONS = 10000
 
-
-FRAME_WIDTH = 150
-FRAME_HEIGHT = 190
 STACK_SIZE = 4
 
 EPSILON_MAX = 1.00
 EPSILON_MIN = 0.1
 EPSILON_STEPS = 5000000
 
-SAVE_CHECKPOINT_EVERY = 100
-DEMO_EVERY = 10
+SAVE_CHECKPOINT_EVERY = 10
+DEMO_EVERY = 5
 
-env_name = "SpaceInvadersDeterministic-v4"
+def create_train_env():
+    return retro.make(game='KungFu-Nes',
+                     use_restricted_actions=retro.Actions.DISCRETE)
 
-def make_train_env(env_name):
-    e = gym.make(env_name)
-    assert e.frameskip == 3
-    return e
+env = create_train_env()
 
-def make_test_env(env_name):
-    e = gym.make(env_name)
-    assert e.frameskip == 3
-    return e
+tf.reset_default_graph()
+tf.logging.set_verbosity(tf.logging.ERROR)
 
-env = make_train_env(env_name)
+session = tf.Session()
 
 # Image preprocessing
 class ImagePreprocessor:
-    def __init__(self):
+    def __init__(self, session):
+        self.session = session
         with tf.variable_scope("image_preprocessor"):
-            self.input = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
+            self.input = tf.placeholder(shape=[224, 240, 3], dtype=tf.uint8)
             t = tf.image.rgb_to_grayscale(self.input)
             t = tf.image.convert_image_dtype(t, dtype=tf.float32)
-            t = tf.image.crop_to_bounding_box(t, 10, 5, 190, 150)
-            self.output = tf.squeeze(t)
+            t = tf.image.crop_to_bounding_box(t, 100, 0, 80, 240)
+            t = tf.squeeze(t)
+            self.output = t
 
-    def transform(self, frame, session=None):
-        session = session if session is not None else tf.get_default_session()
-        return session.run(self.output, feed_dict={self.input: frame})
+    def set_session(self, session):
+        self.session = session
+
+    def transform(self, frame):
+        return self.session.run(self.output, feed_dict={self.input: frame})
 
 
-# Layer Definitions
+image_preprocessor = ImagePreprocessor(session)
+
+# Inputs
+X = tf.placeholder(
+    shape=(None, 80, 240, STACK_SIZE), dtype=tf.float32, name="x"
+)
+X2 = tf.placeholder(
+    shape=(None, 80, 240, STACK_SIZE), dtype=tf.float32, name="x2"
+)
+R = tf.placeholder(dtype=tf.float32, shape=(None,), name="reward")  # reward
+D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
+A = tf.placeholder(dtype=tf.int32, shape=(None,), name="action")  # action_dim
+
 def create_conv_net(activation=tf.nn.relu):
     return MLPNetwork([
         tf.layers.Conv2D(
@@ -120,7 +130,7 @@ def create_conv_net(activation=tf.nn.relu):
     ], name="ConvNet")
 
 
-def create_q_net(output_dim, activation=tf.nn.relu, trainable=True):
+def create_q_net(output_dim, scope, activation=tf.nn.relu, trainable=True):
     return MLPNetwork([
         tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
@@ -131,41 +141,19 @@ def create_q_net(output_dim, activation=tf.nn.relu, trainable=True):
             units=output_dim, trainable=trainable, name="Q",
             kernel_initializer=tf.initializers.glorot_uniform(),
         )
-    ], name="QNet")
+    ], name="QNet/" + scope)
 
-tf.reset_default_graph()
-
-image_preprocessor = ImagePreprocessor()
-
-# Inputs
-X = tf.placeholder(
-    shape=(
-        None,
-        FRAME_HEIGHT,
-        FRAME_WIDTH,
-        STACK_SIZE),
-    dtype=tf.float32,
-    name="x")
-X2 = tf.placeholder(
-    shape=(
-        None,
-        FRAME_HEIGHT,
-        FRAME_WIDTH,
-        STACK_SIZE),
-    dtype=tf.float32,
-    name="x2")
-R = tf.placeholder(dtype=tf.float32, shape=(None,), name="reward")  # reward
-D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
-A = tf.placeholder(dtype=tf.int32, shape=(None,), name="action")  # action_dim
-
-# Convolution
 conv_layer = create_conv_net()
 Z = conv_layer(X)
 Z2 = conv_layer(X2)
 
 # Deep Q Network
-q_layer = create_q_net(output_dim=env.action_space.n, trainable=True)
-target_q_layer = create_q_net(output_dim=env.action_space.n, trainable=False)
+q_layer = create_q_net(
+    output_dim=env.action_space.n, scope="main", trainable=True
+)
+target_q_layer = create_q_net(
+    output_dim=env.action_space.n, scope="target", trainable=False
+)
 
 Q = q_layer(Z)
 Q2 = target_q_layer(Z2)
@@ -197,10 +185,8 @@ with tf.name_scope("copy_op"):
 with tf.name_scope("update_op"):
     update_op = target_q_layer.update_from(q_layer, decay=DECAY)
 
-# Initialize Session and Run copy ops
-session = tf.Session()
-init_op = tf.global_variables_initializer()
-session.run(init_op)
+# Initialize variables
+session.run(tf.global_variables_initializer())
 session.run(copy_op)
 
 # Setup Summary
@@ -235,14 +221,13 @@ class FrameStack:
 
 
 replay_buffer = StackedFrameReplayBuffer(
-    frame_height=FRAME_HEIGHT,
-    frame_width=FRAME_WIDTH,
+    frame_height=80,
+    frame_width=240,
     stack_size=STACK_SIZE,
     batch_size=BATCH_SIZE,
     max_size=MAXIMAL_SAMPLES,
 )
 
-# Play
 
 
 def sample_action(env, state, epsilon):
@@ -258,14 +243,14 @@ def play_once(env, epsilon, render=False):
     done = False
     steps = 0
     total_return = 0
-    frame = image_preprocessor.transform(observation, session)
+    frame = image_preprocessor.transform(observation)
     frame_stack = FrameStack(frame)
     while not done:
         state = frame_stack.get_state()
 
         action = sample_action(env, state, epsilon)
         observation, reward, done, _ = env.step(action)
-        frame = image_preprocessor.transform(observation, session)
+        frame = image_preprocessor.transform(observation)
         frame_stack.append(frame)
 
         replay_buffer.store(frame, action, reward, done)
@@ -294,21 +279,18 @@ def train(steps):
 
 
 def demo():
-    demo_env = gym.wrappers.Monitor(
-        make_test_env(env_name),
-        MONITOR_DIR,
-        resume=True,
-        mode="evaluation",
-        write_upon_reset=True
+    record_path = os.path.join(
+        MONITOR_DIR, datetime.now().strftime("%m-%d-%Y-%H-%M-%S.bk2")
     )
-    steps, total_return = play_once(demo_env, 0.05, render=True)
+    os.makedirs(MONITOR_DIR, exist_ok=True)
+    env.record_movie(record_path)
+    steps, total_return = play_once(env, 0.05, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     summary = tf.Summary()
     summary.value.add(tag="demo/return", simple_value=total_return)
     summary.value.add(tag="demo/steps", simple_value=steps)
-    demo_env.close()
+    env.stop_record()
     return summary
-
 
 linear_schedule = LinearSchedule(
     int(EPSILON_STEPS),
@@ -324,7 +306,6 @@ while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
         "Played %d < %d steps" %
         (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
-# Main loop
 print("Start Main Loop...")
 for n in range(ITERATIONS):
     gstep = tf.train.global_step(session, global_step)
@@ -358,9 +339,7 @@ for n in range(ITERATIONS):
 
     if n != 0 and n % SAVE_CHECKPOINT_EVERY == 0:
         path = saver.save(
-            session,
-            os.path.join(CHECKPOINT_DIR, "model"),
-            global_step=gstep
+            session, os.path.join(CHECKPOINT_DIR, "model"), global_step=gstep
         )
         print("Saved checkpoint to", path)
 
