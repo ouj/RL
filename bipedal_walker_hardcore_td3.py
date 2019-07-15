@@ -16,15 +16,15 @@ set_random_seed(0)
 FILENAME = "bipedal_walker_hardcore_td3"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run2")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
-MU_LEARNING_RATE = 1e-5
-Q_LEARNING_RATE = 1e-4
+MU_LEARNING_RATE = 1e-3
+Q_LEARNING_RATE = 1e-3
 GAMMA = 0.99
 DECAY = 0.995
-ACTION_NOISE = 0.15
+ACTION_NOISE = 0.1
 POLICY_NOISE = 0.2
 POLICY_NOISE_CLIP = 0.5
 POLICY_FREQ = 2
@@ -111,10 +111,8 @@ def add_clipped_noise(action, action_max):
         dtype=tf.float32
     )
     noise = tf.clip_by_value(noise, -POLICY_NOISE_CLIP, POLICY_NOISE_CLIP)
-    tf.summary.histogram("mics/noise", noise)
     action = tf.clip_by_value(tf.math.add(
         action, noise), -action_max, action_max)
-    tf.summary.histogram("mics/sampled_action", action)
     return action
 
 
@@ -173,7 +171,7 @@ with tf.name_scope("GlobalStep"):
     global_step_op = tf.assign_add(global_step, 1, name="increment")
 
 with tf.name_scope("Prediction"):
-    predict_op = add_clipped_noise(mu, action_max)
+    predict_op = mu
 
 with tf.name_scope("Training"):
     with tf.name_scope("Q"):
@@ -280,12 +278,12 @@ replay_buffer = ReplayBuffer(
     max_size=MAXIMAL_SAMPLES
 )
 
-# Play
-
 
 def get_action(observation):
     feed_dict = {X: np.atleast_2d(observation)}
-    return session.run(predict_op, feed_dict)[0]
+    action = session.run(predict_op, feed_dict)[0]
+    action += ACTION_NOISE * np.random.randn(action_dim)
+    return np.clip(action, -action_max, action_max)
 
 
 def play_once(env, random_action, max_steps=MAX_EPISODE_LENGTH, render=False):
