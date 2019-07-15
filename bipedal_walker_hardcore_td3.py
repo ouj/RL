@@ -183,7 +183,7 @@ with tf.name_scope("Training"):
         Q1_mu = q1_net(X_mu) # For policy gradient
         mu_loss = -tf.reduce_mean(Q1_mu)
 
-    with tf.name_scope("TrainOp")
+    with tf.name_scope("TrainOp"):
         q1_train_op = tf.train.AdamOptimizer(learning_rate=Q_LEARNING_RATE).minimize(
             q1_loss, var_list=q1_net.collect_variables()
         )
