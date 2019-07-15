@@ -50,21 +50,21 @@ def create_mu_net(
             units=512,
             activation=activation,
             trainable=trainable,
-            name="W",
+            name="H1",
             kernel_initializer=tf.initializers.glorot_normal(),
         ),
         tf.layers.Dense(
             units=256,
             activation=activation,
             trainable=trainable,
-            name="V",
+            name="H2",
             kernel_initializer=tf.initializers.glorot_normal(),
         ),
         tf.layers.Dense(
             units=output_dim,
             activation=tf.nn.tanh,
             trainable=trainable,
-            name="MU",
+            name="O",
             kernel_initializer=tf.initializers.glorot_normal(),
         ),
         tf.keras.layers.Lambda(
@@ -80,20 +80,20 @@ def create_q_net(name, activation=tf.nn.relu, trainable=True):
             units=512,
             activation=activation,
             trainable=trainable,
-            name="W",
+            name="H1",
             kernel_initializer=tf.initializers.glorot_normal,
         ),
         tf.layers.Dense(
             units=256,
             activation=activation,
             trainable=trainable,
-            name="V",
+            name="H2",
             kernel_initializer=tf.initializers.glorot_normal(),
         ),
         tf.layers.Dense(
             units=1,
             trainable=trainable,
-            name="Q",
+            name="O",
             kernel_initializer=tf.initializers.glorot_normal,
         ),
         tf.keras.layers.Lambda(
@@ -110,7 +110,9 @@ def add_clipped_noise(action, action_max):
         dtype=tf.float32
     )
     noise = tf.clip_by_value(noise, -POLICY_NOISE_CLIP, POLICY_NOISE_CLIP)
+    tf.summary.histogram("mics/noise", noise)
     action = tf.clip_by_value(tf.math.add(action, noise), -action_max, action_max)
+    tf.summary.histogram("mics/sampled_action", action)
     return action
 
 tf.reset_default_graph()
@@ -133,22 +135,22 @@ action_max = env.action_space.high[0]
 action_min = env.action_space.low[0]
 
 mu_net = create_mu_net(
-    name="Main/Mu",
+    name="Mu/main",
     output_dim=action_dim,
     action_max=action_max,
     trainable=True
 )
 targ_mu_net = create_mu_net(
-    name="Target/Mu",
+    name="Mu/target",
     output_dim=action_dim,
     action_max=action_max,
     trainable=False
 )
 
-q1_net = create_q_net(name="Main/Q1", trainable=True)
-q2_net = create_q_net(name="Main/Q2", trainable=True)
-targ_q1_net = create_q_net(name="Target/Q1", trainable=False)
-targ_q2_net = create_q_net(name="Target/Q2", trainable=False)
+q1_net = create_q_net(name="Q1/main", trainable=True)
+q2_net = create_q_net(name="Q2/main", trainable=True)
+targ_q1_net = create_q_net(name="Q1/target", trainable=False)
+targ_q2_net = create_q_net(name="Q2/target", trainable=False)
 
 mu = mu_net(X)
 X_A = tf.concat([X, A], axis=-1, name="XA")
@@ -175,12 +177,24 @@ with tf.name_scope("Training"):
         G = tf.stop_gradient(R + GAMMA * (1 - D) * target_next_Q)
         q1_loss = tf.reduce_mean(tf.math.square(Q1 - G))
         q2_loss = tf.reduce_mean(tf.math.square(Q2 - G))
+
+    with tf.name_scope("Mu"):
+        X_mu = tf.concat([X, mu], axis=-1)
+        Q1_mu = q1_net(X_mu) # For policy gradient
+        mu_loss = -tf.reduce_mean(Q1_mu)
+
+    with tf.name_scope("TrainOp")
         q1_train_op = tf.train.AdamOptimizer(learning_rate=Q_LEARNING_RATE).minimize(
             q1_loss, var_list=q1_net.collect_variables()
         )
         q2_train_op = tf.train.AdamOptimizer(learning_rate=Q_LEARNING_RATE).minimize(
             q2_loss, var_list=q2_net.collect_variables()
         )
+        mu_train_op = tf.train.AdamOptimizer(learning_rate=MU_LEARNING_RATE).minimize(
+            mu_loss, var_list=mu_net.collect_variables()
+        )
+
+    with tf.name_scope("Summary"):
         tf.summary.histogram("Actor 1", Q1)
         tf.summary.histogram("Actor 2", Q2)
         tf.summary.histogram("Critic", G)
@@ -188,14 +202,6 @@ with tf.name_scope("Training"):
         tf.summary.histogram("Advantage 2", Q2 - G)
         tf.summary.scalar("Q1_Loss", q1_loss)
         tf.summary.scalar("Q2_Loss", q2_loss)
-
-    with tf.name_scope("Mu"):
-        X_mu = tf.concat([X, mu], axis=-1)
-        Q1_mu = q1_net(X_mu) # For policy gradient
-        mu_loss = -tf.reduce_mean(Q1_mu)
-        mu_train_op = tf.train.AdamOptimizer(learning_rate=MU_LEARNING_RATE).minimize(
-            mu_loss, var_list=mu_net.collect_variables()
-        )
         tf.summary.scalar("Mu_Loss", mu_loss)
 
 with tf.name_scope("CopyOp"):
