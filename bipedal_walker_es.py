@@ -6,13 +6,14 @@ import os
 import numpy as np
 from datetime import datetime
 
+
 def set_random_seed(seed):
     tf.set_random_seed(seed)
     np.random.seed(seed)
 
 
 def save_model(model, filename="evolution.npz"):
-    print ("Saved model to", filename)
+    print("Saved model to", filename)
     np.savez(filename, *model)
 
 
@@ -20,7 +21,7 @@ def load_model(filename="evolution.npz"):
     if not os.path.exists(filename):
         return None
     npzfile = np.load(filename, allow_pickle=True)
-    print ("Loded model from", filename)
+    print("Loded model from", filename)
     return [v for _, v in sorted(npzfile.items())]
 
 
@@ -70,10 +71,11 @@ class Agent:
         return self.predict(model, state)
 
     def explore(self, model, episode_iterations):
-        N = [] # mutations
-        R = np.zeros(self.population_size) # returns
+        N = []  # mutations
+        R = np.zeros(self.population_size)  # returns
         for v in model:
-            N.append(np.random.randn(self.population_size, v.shape[0], v.shape[1]))
+            N.append(np.random.randn(
+                self.population_size, v.shape[0], v.shape[1]))
 
         for p in range(self.population_size):
             new_model = []
@@ -86,7 +88,9 @@ class Agent:
 
         A = (R - np.mean(R)) / np.std(R)
         for k in range(len(model)):
-            model[k] = model[k] + self.learning_rate / (self.population_size * self.sigma) * np.dot(N[k].transpose(1, 2, 0), A)
+            model[k] = model[k] + self.learning_rate / \
+                (self.population_size * self.sigma) * \
+                np.dot(N[k].transpose(1, 2, 0), A)
 
         return model
 
@@ -130,7 +134,6 @@ def main():
     model = load_model()
     model = agent.train(iterations=1000, model=model)
     save_model(model)
-
 
 
 if __name__ == "__main__":

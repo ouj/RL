@@ -91,6 +91,7 @@ def create_q_network(name, activation=tf.nn.relu, trainable=True):
         ),
     ], name=name)
 
+
 tf.reset_default_graph()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
@@ -109,10 +110,12 @@ D = tf.placeholder(dtype=tf.float32, shape=(None,), name="done")  # done
 action_dim = env.action_space.shape[0]
 action_max = env.action_space.high[0]
 
-mu_network = create_mu_network(name="main/mu", output_dim=action_dim, action_max=action_max, trainable=True)
+mu_network = create_mu_network(
+    name="main/mu", output_dim=action_dim, action_max=action_max, trainable=True)
 q_network = create_q_network(name="main/Q", trainable=True)
 
-target_mu_network = create_mu_network(name="target/mu", output_dim=action_dim, action_max=action_max, trainable=False)
+target_mu_network = create_mu_network(
+    name="target/mu", output_dim=action_dim, action_max=action_max, trainable=False)
 target_q_network = create_q_network(name="target/Q", trainable=False)
 
 mu = mu_network(X)
@@ -150,7 +153,8 @@ with tf.name_scope("mu_train_op"):
 
 with tf.name_scope("copy_op"):
     copy_op = tf.group(
-        [target_mu_network.copy_from(mu_network), target_q_network.copy_from(q_network)]
+        [target_mu_network.copy_from(
+            mu_network), target_q_network.copy_from(q_network)]
     )
 
 with tf.name_scope("update_op"):
@@ -168,7 +172,8 @@ class ReplayBuffer:
         self.size = 0
         self.max_size = max_size
         self.states = np.zeros([max_size, observation_dim], dtype=np.float32)
-        self.next_states = np.zeros([max_size, observation_dim], dtype=np.float32)
+        self.next_states = np.zeros(
+            [max_size, observation_dim], dtype=np.float32)
         self.actions = np.zeros([max_size, action_dim], dtype=np.float32)
         self.rewards = np.zeros(max_size, dtype=np.float32)
         self.dones = np.zeros(max_size, dtype=np.float32)
@@ -227,6 +232,8 @@ if last_checkpoint is not None:
     print("Restored last checkpoint", last_checkpoint)
 
 # Play
+
+
 def get_action(observation):
     feed_dict = {X: np.atleast_2d(observation)}
     action = session.run(predict_op, feed_dict)[0]
@@ -250,7 +257,8 @@ def play_once(env, random_action, max_steps=MAX_EPISODE_LENGTH, render=False):
         # horizon (that is, when it's an artificial terminal signal
         # that isn't based on the agent's state)
         d_store = False if steps == max_steps else done
-        replay_buffer.store(observation, action, reward, next_observation, d_store)
+        replay_buffer.store(observation, action, reward,
+                            next_observation, d_store)
 
         observation = next_observation
         steps += 1
@@ -289,11 +297,13 @@ def demo():
     demo_env.close()
     return summary
 
+
 # Populate replay buffer
 print("Populating replay buffer")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
     steps, total_return = play_once(env, random_action=True, render=False)
-    print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
+    print("Played %d < %d steps" %
+          (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
 print("Start Main Loop...")

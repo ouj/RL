@@ -26,8 +26,8 @@ GAMMA = 0.99
 DECAY = 0.995
 ACTION_NOISE = 0.15
 POLICY_NOISE = 0.2
-POLICY_NOISE_CLIP=0.5
-POLICY_FREQ=2
+POLICY_NOISE_CLIP = 0.5
+POLICY_FREQ = 2
 MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 1000000
 ITERATIONS = 100000
@@ -43,8 +43,8 @@ env = gym.make("BipedalWalkerHardcore-v2")
 
 
 def create_mu_net(
-        name, output_dim, action_max, activation=tf.nn.relu, trainable=True
-    ):
+    name, output_dim, action_max, activation=tf.nn.relu, trainable=True
+):
     return MLPNetwork([
         tf.layers.Dense(
             units=512,
@@ -102,6 +102,7 @@ def create_q_net(name, activation=tf.nn.relu, trainable=True):
         ),
     ], name=name)
 
+
 def add_clipped_noise(action, action_max):
     noise = tf.random_normal(
         shape=tf.shape(action),
@@ -111,9 +112,11 @@ def add_clipped_noise(action, action_max):
     )
     noise = tf.clip_by_value(noise, -POLICY_NOISE_CLIP, POLICY_NOISE_CLIP)
     tf.summary.histogram("mics/noise", noise)
-    action = tf.clip_by_value(tf.math.add(action, noise), -action_max, action_max)
+    action = tf.clip_by_value(tf.math.add(
+        action, noise), -action_max, action_max)
     tf.summary.histogram("mics/sampled_action", action)
     return action
+
 
 tf.reset_default_graph()
 tf.logging.set_verbosity(tf.logging.ERROR)
@@ -180,7 +183,7 @@ with tf.name_scope("Training"):
 
     with tf.name_scope("Mu"):
         X_mu = tf.concat([X, mu], axis=-1)
-        Q1_mu = q1_net(X_mu) # For policy gradient
+        Q1_mu = q1_net(X_mu)  # For policy gradient
         mu_loss = -tf.reduce_mean(Q1_mu)
 
     with tf.name_scope("TrainOp"):
@@ -241,7 +244,8 @@ class ReplayBuffer:
         self.size = 0
         self.max_size = max_size
         self.states = np.zeros([max_size, observation_dim], dtype=np.float32)
-        self.next_states = np.zeros([max_size, observation_dim], dtype=np.float32)
+        self.next_states = np.zeros(
+            [max_size, observation_dim], dtype=np.float32)
         self.actions = np.zeros([max_size, action_dim], dtype=np.float32)
         self.rewards = np.zeros(max_size, dtype=np.float32)
         self.dones = np.zeros(max_size, dtype=np.float32)
@@ -277,6 +281,8 @@ replay_buffer = ReplayBuffer(
 )
 
 # Play
+
+
 def get_action(observation):
     feed_dict = {X: np.atleast_2d(observation)}
     return session.run(predict_op, feed_dict)[0]
@@ -298,7 +304,8 @@ def play_once(env, random_action, max_steps=MAX_EPISODE_LENGTH, render=False):
         # horizon (that is, when it's an artificial terminal signal
         # that isn't based on the agent's state)
         d_store = False if steps == max_steps else done
-        replay_buffer.store(observation, action, reward, next_observation, d_store)
+        replay_buffer.store(observation, action, reward,
+                            next_observation, d_store)
 
         observation = next_observation
         steps += 1
@@ -340,11 +347,13 @@ def demo():
     demo_env.close()
     return summary
 
+
 # Populate replay buffer
 print("Populating replay buffer")
 while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
     steps, total_return = play_once(env, random_action=True, render=False)
-    print("Played %d < %d steps" % (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
+    print("Played %d < %d steps" %
+          (replay_buffer.number_of_samples(), MINIMAL_SAMPLES))
 
 # Main loop
 print("Start Main Loop...")
