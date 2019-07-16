@@ -245,8 +245,6 @@ if last_checkpoint is not None:
     print("Restored last checkpoint", last_checkpoint)
 
 # Play
-
-
 def get_action(observation):
     feed_dict = {X: np.atleast_2d(observation)}
     action = session.run(predict_op, feed_dict)[0]
