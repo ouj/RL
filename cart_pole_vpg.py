@@ -53,19 +53,16 @@ def create_policy_nets(output_dim, activation=tf.nn.relu):
         tf.layers.Dense(
             units=256, activation=activation, name="W",
             kernel_initializer=tf.initializers.glorot_uniform(),
-            use_bias=False
         ),
         tf.layers.Dense(
             units=output_dim, name="Q",
             activation=tf.nn.softmax,
             kernel_initializer=tf.initializers.glorot_uniform(),
-            use_bias=False
         ),
     ], name="Policy")
 
 def create_value_net(output_dim, activation=tf.nn.relu):
     return MLPNetwork([
-        tf.layers.Flatten(name="flatten"),
         tf.layers.Dense(
             units=256, activation=activation, name="W",
             kernel_initializer=tf.initializers.glorot_uniform(),

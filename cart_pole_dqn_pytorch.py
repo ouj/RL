@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import torchvision.transforms as T
 from common.replay_buffer import ReplayBuffer
 from common.helpers import set_random_seed
 from common.schedules import LinearSchedule
@@ -46,25 +45,24 @@ action_dim = env.action_space.n
 # Computational Graph
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def create_policy_nets(input_dim, output_dim):
+    hidden_size = 20
+    model = nn.Sequential(
+        nn.Linear(input_dim, hidden_size),
+        nn.ReLU(),
+        nn.Linear(hidden_size, hidden_size),
+        nn.ReLU(),
+        nn.Linear(hidden_size, output_dim)
+    )
+    def init_weights(m):
+        if type(m) == nn.Linear:
+            nn.init.xavier_uniform_(m.weight)
+    model.apply(init_weights)
+    model.to(device=device)
+    return model
 
-class PolicyNet(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(PolicyNet, self).__init__()
-        hidden_size = 20
-        self.w = nn.Linear(in_features=input_dim, out_features=hidden_size)
-        self.v = nn.Linear(in_features=hidden_size, out_features=hidden_size)
-        self.q = nn.Linear(in_features=hidden_size, out_features=output_dim)
-        self.to(device=device)
-
-    def forward(self, x):
-        x = F.relu(self.w(x))
-        x = F.relu(self.v(x))
-        x = self.q(x)
-        return x
-
-
-policy_net = PolicyNet(observation_dim, action_dim)
-target_net = PolicyNet(observation_dim, action_dim)
+policy_net = create_policy_nets(observation_dim, action_dim)
+target_net = create_policy_nets(observation_dim, action_dim)
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
@@ -112,12 +110,12 @@ def play_once(env, epsilon, render=False):
 
 def train():
     batch = replay_buffer.sample_batch(BATCH_SIZE)
-    with torch.no_grad():
-        x = torch.tensor(batch['s'], device=device, dtype=torch.float)
-        x2 = torch.tensor(batch['s2'], device=device, dtype=torch.float)
-        action = torch.tensor(batch['a'], device=device, dtype=torch.long)
-        reward = torch.tensor(batch['r'], device=device, dtype=torch.float)
-        done = torch.tensor(batch['d'], device=device, dtype=torch.float)
+
+    x = torch.tensor(batch['s'], device=device, dtype=torch.float)
+    x2 = torch.tensor(batch['s2'], device=device, dtype=torch.float)
+    action = torch.tensor(batch['a'], device=device, dtype=torch.long)
+    reward = torch.tensor(batch['r'], device=device, dtype=torch.float)
+    done = torch.tensor(batch['d'], device=device, dtype=torch.float)
 
     selected_q = policy_net(x).gather(1, action)
     with torch.no_grad():
