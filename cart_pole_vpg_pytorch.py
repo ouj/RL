@@ -74,39 +74,6 @@ value_net = create_value_net(env.observation_space.shape[0], )
 policy_optimizer = optim.Adam(policy_net.parameters(), lr=P_LEARNING_RATE)
 value_optimizer = optim.Adam(value_net.parameters(), lr=V_LEARNING_RATE)
 
-# X = tf.placeholder(
-#     shape=(None, env.observation_space.shape[0]), dtype=tf.float32, name="x"
-# )
-# A = tf.placeholder(
-#     dtype=tf.int32, shape=(None, *env.action_space.shape), name="action"
-# )  # action
-# G = tf.placeholder(tf.float32, shape=(None,), name='G')
-
-
-
-
-# Q = policy_net(X)
-# V = value_net(X)
-#
-# with tf.name_scope("train_op"):
-#     with tf.name_scope("Policy"):
-#         advantages = tf.stop_gradient(G - V)
-#         selected_prob = tf.log(tf.reduce_sum(
-#             Q * tf.one_hot(A, env.action_space.n), reduction_indices=[1]
-#         ))
-#         q_loss = -tf.reduce_sum(advantages * selected_prob)
-#         q_train_op = tf.train.AdamOptimizer(
-#             learning_rate=P_LEARNING_RATE).minimize(q_loss)
-#         tf.summary.scalar("policy_loss", q_loss)
-#         tf.summary.scalar("max_advantages", tf.math.reduce_max(advantages))
-#         tf.summary.histogram("advantages", advantages)
-#
-#     with tf.name_scope("Value"):
-#         v_loss = tf.reduce_sum(tf.square(G - V))
-#         v_train_op = tf.train.AdamOptimizer(V_LEARNING_RATE).minimize(v_loss)
-#         tf.summary.histogram("value", V)
-#         tf.summary.scalar("max_value", tf.math.reduce_max(V))
-
 def compute_returns(rewards):
     # compute returns
     returns = []
