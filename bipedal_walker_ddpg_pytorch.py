@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 from common.helpers import set_random_seed
 from common.schedules import LinearSchedule
 
@@ -19,7 +20,7 @@ set_random_seed(0)
 FILENAME = "bipedal_walker_ddpg"
 TS = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
 MONITOR_DIR = os.path.join("output", FILENAME, "video", TS)
-LOGGING_DIR = os.path.join("output", FILENAME, "log", "run5")
+LOGGING_DIR = os.path.join("output", FILENAME, "log", "run1")
 CHECKPOINT_DIR = os.path.join("output", FILENAME, "checkpoints")
 
 # Hyperparameters
@@ -31,7 +32,7 @@ ACTION_NOISE = 0.1
 MINIMAL_SAMPLES = 10000
 MAXIMAL_SAMPLES = 1000000
 ITERATIONS = 100000
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 MAX_EPISODE_LENGTH = 1600
 
@@ -106,6 +107,18 @@ copy_weight(targ_q_net, q_net)
 
 mu_optimizer = optim.Adam(mu_net.parameters(), lr=MU_LEARNING_RATE)
 q_optimizer = optim.Adam(q_net.parameters(), lr=Q_LEARNING_RATE)
+
+
+# Summary Writer
+writer = SummaryWriter(log_dir=LOGGING_DIR)
+
+
+def write_model(writer, model, model_name, global_step=None):
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        writer.add_histogram(model_name + "/" + name,
+                             param.data, global_step=global_step)
 
 
 class ReplayBuffer:
@@ -191,40 +204,65 @@ def play_once(env, random_action, max_steps=MAX_EPISODE_LENGTH, render=False):
 
 
 # Train
-def train(steps):
-    for n in range(steps):
-        batch = replay_buffer.sample_batch(BATCH_SIZE)
+def train_once():
+    batch = replay_buffer.sample_batch(BATCH_SIZE)
 
-        x = torch.tensor(batch['s'], device=device, dtype=torch.float)
-        x2 = torch.tensor(batch['s2'], device=device, dtype=torch.float)
-        action = torch.tensor(batch['a'], device=device, dtype=torch.float)
-        reward = torch.tensor(
-            batch['r'], device=device, dtype=torch.float).unsqueeze(1)
-        done = torch.tensor(batch['d'], device=device,
-                            dtype=torch.float).unsqueeze(1)
+    x = torch.tensor(batch['s'], device=device, dtype=torch.float)
+    x2 = torch.tensor(batch['s2'], device=device, dtype=torch.float)
+    action = torch.tensor(batch['a'], device=device, dtype=torch.float)
+    reward = torch.tensor(
+        batch['r'], device=device, dtype=torch.float).unsqueeze(1)
+    done = torch.tensor(batch['d'], device=device,
+                        dtype=torch.float).unsqueeze(1)
 
-        # Train Q
-        q = q_net(torch.cat((x, action), dim=1))
-        with torch.no_grad():
-            next_mu = action_max * targ_mu_net(x2)
-            next_q = targ_q_net(torch.cat((x2, next_mu), dim=1))
-            g = reward + GAMMA * (1 - done) * next_q
+    # Train Q
+    q = q_net(torch.cat((x, action), dim=1))
+    with torch.no_grad():
+        next_mu = action_max * targ_mu_net(x2)
+        next_q = targ_q_net(torch.cat((x2, next_mu), dim=1))
+        g = reward + GAMMA * (1 - done) * next_q
 
-        q_loss = F.mse_loss(q, g)
-        q_optimizer.zero_grad()
-        q_loss.backward()
-        q_optimizer.step()
+    q_loss = F.mse_loss(q, g)
+    q_optimizer.zero_grad()
+    q_loss.backward()
+    q_optimizer.step()
 
-        # Train Mu
-        mu = action_max * mu_net(x)
-        q_mu = q_net(torch.cat((x, mu), dim=1))
-        mu_loss = -q_mu.mean()
-        mu_optimizer.zero_grad()
-        mu_loss.backward()
-        mu_optimizer.step()
+    # Train Mu
+    mu = action_max * mu_net(x)
+    q_mu = q_net(torch.cat((x, mu), dim=1))
+    mu_loss = -q_mu.mean()
 
-        update_weights(targ_mu_net, mu_net, DECAY)
-        update_weights(targ_q_net, q_net, DECAY)
+    mu_optimizer.zero_grad()
+    mu_loss.backward()
+    mu_optimizer.step()
+
+    update_weights(targ_mu_net, mu_net, DECAY)
+    update_weights(targ_q_net, q_net, DECAY)
+
+    return q_loss.item(), mu_loss.item()
+
+
+def train(steps, global_step):
+    t0 = datetime.now()
+    q_losses = np.zeros(steps)
+    mu_losses = np.zeros(steps)
+    for s in range(steps):
+        q_loss, mu_loss = train_once()
+        q_losses[s] = q_loss
+        mu_losses[s] = mu_loss
+
+    delta = datetime.now() - t0
+
+    writer.add_scalar("Train/AverageQLoss", q_losses.mean(),
+                      global_step=global_step)
+    writer.add_scalar("Train/AverageMuLoss",
+                      mu_losses.mean(), global_step=global_step)
+    writer.add_scalar("Train/Step", steps, global_step=global_step)
+    writer.add_scalar("Train/Duration", delta.total_seconds(),
+                      global_step=global_step)
+    write_model(writer, mu_net, "mu_net", global_step=global_step)
+    write_model(writer, q_net, "q_net", global_step=global_step)
+    return delta.total_seconds()
 
 
 def demo():
@@ -234,6 +272,7 @@ def demo():
     steps, total_return = play_once(demo_env, random_action=False, render=True)
     print("Demo for %d steps, Return %d" % (steps, total_return))
     demo_env.close()
+    return steps, total_return
 
 
 # Populate replay buffer
@@ -245,11 +284,11 @@ while MINIMAL_SAMPLES > replay_buffer.number_of_samples():
 
 # Main loop
 print("Start Main Loop...")
+global_step = 0
 for n in range(ITERATIONS):
     steps, total_return = play_once(env, random_action=False)
-    t0 = datetime.now()
-    train_summary = train(steps)
-    delta = datetime.now() - t0
+    writer.add_scalar("Play/Return", total_return, global_step=global_step)
+    duration = train(steps, global_step)
     print(
         "Episode:",
         n,
@@ -258,9 +297,13 @@ for n in range(ITERATIONS):
         "Step:",
         steps,
         "Duration:",
-        delta.total_seconds(),
+        duration,
     )
     if n % DEMO_EVERY == 0:
         demo()
+        writer.add_scalar("Demo/Return", total_return, global_step=global_step)
+        writer.add_scalar("Demo/Step", steps, global_step=global_step)
+    global_step = global_step + steps
+
 # Close Environment
 env.close()
