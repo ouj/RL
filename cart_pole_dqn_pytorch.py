@@ -127,8 +127,6 @@ def train():
 
     optimizer.zero_grad()
     loss.backward()
-    # for param in target_net.parameters():
-    #     print(param)
     optimizer.step()
 
 
